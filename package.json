@@ -1,0 +1,52 @@
+{
+  "name": "markdown-live-editor-vs-code",
+  "displayName": "Markdown Live Editor",
+  "description": "Live markdown preview editor for VS Code built with hexagonal architecture.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:markdownLiveEditor.openPreview"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdownLiveEditor.openPreview",
+        "title": "Markdown Live Editor: Open Live Preview"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markdownLiveEditor.openPreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.9.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^2.4.1",
+    "typescript": "^5.6.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "katex": "^0.16.22",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.12.0"
+  }
+}
