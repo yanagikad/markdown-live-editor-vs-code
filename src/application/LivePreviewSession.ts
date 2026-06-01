@@ -162,10 +162,14 @@ export class LivePreviewSession implements vscode.Disposable {
         const fullRange = this.createFullDocumentRange(document);
         const edit = new vscode.WorkspaceEdit();
         edit.replace(document.uri, fullRange, markdown);
-        await vscode.workspace.applyEdit(edit);
+        const applied = await vscode.workspace.applyEdit(edit);
+        if (!applied) {
+          throw new Error("Failed to apply markdown edits from preview.");
+        }
       })
-      .catch(() => {
-        // 次の編集で復帰できるようにキューを止めない。
+      .catch((error) => {
+        console.error("Failed to apply markdown edits from preview.", error);
+        void vscode.window.showErrorMessage("Preview edits could not be applied. Check if the document is writable.");
       });
   }
 

@@ -91,8 +91,8 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     const nonce = this.createNonce();
     const encodedSource = encodeURIComponent(sourceMarkdown);
     const encodedRendered = encodeURIComponent(renderedHtml);
-    const mermaidUri = this.panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.nodeModulesUri, "mermaid", "dist", "mermaid.esm.min.mjs")
+    const mermaidScriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "mermaid", "dist", "mermaid.min.js")
     );
     const katexCssUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.nodeModulesUri, "katex", "dist", "katex.min.css")
@@ -293,8 +293,8 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   <section class="editor-shell" data-mode="live-preview">
     <textarea id="markdown-editor" spellcheck="false" aria-label="Markdown source"></textarea>
   </section>
+  <script nonce="${nonce}" src="${mermaidScriptUri}"></script>
   <script type="module" nonce="${nonce}">
-    import mermaid from "${mermaidUri}";
 
     const vscode = acquireVsCodeApi();
     const modeLiveButton = document.getElementById("mode-live");
@@ -397,14 +397,28 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       };
     }
 
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "base",
-      themeVariables: mermaidThemeVariables(resolveTheme())
-    });
+    const mermaid = window.mermaid;
+    const hasMermaid = Boolean(mermaid);
+
+    if (!hasMermaid) {
+      console.error("Mermaid runtime is not available in the preview.");
+    } else {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "loose",
+        suppressErrorRendering: true,
+        theme: "base",
+        themeVariables: mermaidThemeVariables(resolveTheme())
+      });
+    }
+
+    let mermaidSeq = 0;
 
     function setupMermaid() {
+      if (!hasMermaid) {
+        return;
+      }
+
       const blocks = document.querySelectorAll("pre > code.language-mermaid");
       blocks.forEach((codeBlock) => {
         const pre = codeBlock.parentElement;
@@ -412,14 +426,20 @@ export class VsCodePreviewPanel implements vscode.Disposable {
           return;
         }
 
+        const text = (codeBlock.textContent ?? "").trim();
+        const id = "mermaid-" + (mermaidSeq++);
         const container = document.createElement("div");
         container.className = "mermaid";
-        container.textContent = codeBlock.textContent ?? "";
         pre.parentElement.replaceChild(container, pre);
-      });
 
-      mermaid.run({ querySelector: ".mermaid" }).catch(() => {
-        // Keep markdown text if rendering fails.
+        mermaid.render(id, text).then(({ svg, bindFunctions }) => {
+          container.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(container);
+          }
+        }).catch((e) => {
+          console.error("Mermaid rendering failed:", e);
+        });
       });
     }
 

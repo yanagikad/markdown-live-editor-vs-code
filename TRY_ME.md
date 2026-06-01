@@ -16,6 +16,7 @@ graph TD
   B -->|Yes| C[Open Command Palette]
   B -->|No| D[Keep Editing]
   C --> E[Open Live Preview]
+
 ```
 
 ## 3. Math Inline
