@@ -10,7 +10,7 @@ export type PreviewIncomingMessage = {
   markdown: string;
 } | {
   type: "runtimeDiagnostics";
-  level: "info" | "warn" | "error";
+  level: "info" | "error";
   message: string;
   details?: string;
 };
@@ -451,13 +451,13 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   </header>
   <main class="preview-shell" data-mode="live-preview">
     <div id="runtime-boot-banner" class="runtime-boot-banner" data-state="pending" role="status">
-      Initializing Live Preview runtime... (if this stays visible, JavaScript may be blocked before module start)
+      Live Preview 実行環境を初期化しています... これが消えない場合は JavaScript の開始前に失敗しています
     </div>
     <div id="runtime-error-banner" class="runtime-error-banner" role="alert" hidden>
-      <strong>Live Preview WYSIWYG failed to start</strong>
+      <strong>Live Preview の起動に失敗しました</strong>
       <div id="runtime-error-text"></div>
     </div>
-    <div id="runtime-status" class="runtime-status" role="status">status: booting...</div>
+    <div id="runtime-status" class="runtime-status" role="status">状態: 起動中...</div>
     <div id="preview-content"></div>
   </main>
   <section class="editor-shell" data-mode="live-preview">
@@ -474,7 +474,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     const bootBanner = document.getElementById("runtime-boot-banner");
     if (bootBanner) {
-      bootBanner.textContent = "Bootstrap script is running. Waiting for module initialization...";
+      bootBanner.textContent = "Bootstrap スクリプトは実行されました。module 初期化を待機しています...";
       bootBanner.setAttribute("data-state", "bootstrap");
     }
 
@@ -500,17 +500,17 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     window.addEventListener("error", (event) => {
       if (event.error && event.error.stack) {
-        reportRuntimeError("JavaScript runtime error.", event.error.stack);
+        reportRuntimeError("JavaScript 実行時エラーが発生しました。", event.error.stack);
         return;
       }
 
       const source = event.filename ? event.filename + ":" + event.lineno + ":" + event.colno : "unknown";
-      reportRuntimeError("JavaScript runtime error.", String(event.message || "Unknown error") + " @ " + source);
+      reportRuntimeError("JavaScript 実行時エラーが発生しました。", String(event.message || "不明なエラー") + " @ " + source);
     });
 
     window.addEventListener("unhandledrejection", (event) => {
-      const reason = event.reason && event.reason.stack ? event.reason.stack : String(event.reason ?? "Unknown rejection reason");
-      reportRuntimeError("Unhandled promise rejection.", reason);
+      const reason = event.reason && event.reason.stack ? event.reason.stack : String(event.reason ?? "不明な rejection 理由");
+      reportRuntimeError("未処理の Promise rejection が発生しました。", reason);
     });
 
     window.addEventListener("error", (event) => {
@@ -520,7 +520,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       }
 
       const src = target instanceof HTMLScriptElement ? target.src : target.href;
-      reportRuntimeError("Failed to load required webview asset.", src || "Unknown resource");
+      reportRuntimeError("必要な Webview アセットの読み込みに失敗しました。", src || "不明なリソース");
     }, true);
 
     window.addEventListener("message", (event) => {
@@ -538,7 +538,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       if (!state.moduleStarted) {
         const banner = document.getElementById("runtime-boot-banner");
         if (banner) {
-          banner.textContent = "Module script did not start. Possible CSP block or script load error.";
+          banner.textContent = "module スクリプトが開始されませんでした。CSP かアセット読み込みの失敗の可能性があります。";
           banner.setAttribute("data-state", "error");
         }
       }
@@ -554,7 +554,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       bootState.moduleStarted = true;
     }
     if (bootBanner) {
-      bootBanner.textContent = "Module script started.";
+      bootBanner.textContent = "module スクリプトが開始されました。";
       bootBanner.setAttribute("data-state", "module");
     }
 
@@ -618,7 +618,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       }
 
       runtimeStatus.textContent = String(line);
-      emitRuntimeDiagnostics("info", "status", String(line));
+      emitRuntimeDiagnostics("info", "状態", String(line));
     }
 
     function showRuntimeError(message, details) {
@@ -674,8 +674,8 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
       previewContent.replaceChildren(textarea);
       liveFallbackEditor = textarea;
-      setRuntimeStatus("status: live-fallback-editor=true reason=" + reason);
-      emitRuntimeDiagnostics("warn", "Live preview switched to fallback textarea.", reason);
+      setRuntimeStatus("状態: live-fallback-editor=true reason=" + reason);
+      emitRuntimeDiagnostics("error", "Live Preview はフォールバック textarea に切り替わりました。", reason);
 
       if (mode === "live-preview") {
         textarea.focus();
@@ -702,15 +702,15 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     window.addEventListener("securitypolicyviolation", (event) => {
       showRuntimeError(
-        "CSP blocked a required resource.",
+        "CSP により必要なリソースが遮断されました。",
         "directive=" + event.violatedDirective + " blocked=" + event.blockedURI
       );
     });
 
     if (!ToastUIEditor) {
       showRuntimeError(
-        "Toast UI Editor script was not loaded in the webview.",
-        "Check CSP and asset paths under node_modules/@toast-ui/editor/dist."
+        "Toast UI Editor のスクリプトが Webview で読み込まれていません。",
+        "CSP と node_modules/@toast-ui/editor/dist 配下のパスを確認してください。"
       );
     }
 
@@ -736,7 +736,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
           }
 
           setRuntimeStatus(
-            "status: toastui-loaded=" + Boolean(ToastUIEditor) +
+            "状態: toastui-loaded=" + Boolean(ToastUIEditor) +
             " editor-created=" + Boolean(wysiwygEditor) +
             " editable-surface=" + hasEditableSurface
           );
@@ -745,8 +745,8 @@ export class VsCodePreviewPanel implements vscode.Disposable {
         window.setTimeout(() => {
           if (!hasEditableSurface) {
             showRuntimeError(
-              "Toast UI editor created but editable surface was not found.",
-              "Switching to fallback textarea editor."
+              "Toast UI Editor は生成されましたが、編集可能な面が見つかりません。",
+              "フォールバック textarea エディタへ切り替えます。"
             );
             enableLiveFallbackEditor(lastSyncedMarkdown, "toastui-surface-missing");
           }
@@ -779,11 +779,11 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
         hideRuntimeError();
         markBootOk();
-        emitRuntimeDiagnostics("info", "Toast UI editor initialized.");
+        emitRuntimeDiagnostics("info", "Toast UI Editor を初期化しました。");
       } catch (error) {
-        console.error("Failed to initialize Toast UI Editor.", error);
+        console.error("Toast UI Editor の初期化に失敗しました。", error);
         showRuntimeError(
-          "Toast UI Editor initialization failed.",
+          "Toast UI Editor の初期化に失敗しました。",
           error && error.message ? error.message : String(error)
         );
         wysiwygEditor = null;
@@ -792,9 +792,9 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     if (!wysiwygEditor) {
       enableLiveFallbackEditor(initialMarkdown, "toastui-unavailable");
-      setRuntimeStatus("status: toastui-loaded=" + Boolean(ToastUIEditor) + " editor-created=false live-fallback=true");
+      setRuntimeStatus("状態: toastui-loaded=" + Boolean(ToastUIEditor) + " editor-created=false live-fallback=true");
       markBootOk();
-      emitRuntimeDiagnostics("warn", "Toast UI unavailable; running fallback rendered view.");
+      emitRuntimeDiagnostics("error", "Toast UI Editor が利用できないため、フォールバック表示で実行します。");
     }
 
     function handleIncomingMessage(message) {
@@ -1577,7 +1577,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     if (
       candidate.type === "runtimeDiagnostics" &&
-      (candidate.level === "info" || candidate.level === "warn" || candidate.level === "error") &&
+      (candidate.level === "info" || candidate.level === "error") &&
       typeof candidate.message === "string"
     ) {
       return true;

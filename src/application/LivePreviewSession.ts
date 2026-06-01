@@ -1,3 +1,4 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
@@ -9,6 +10,7 @@ import type { MarkdownRendererPort } from "../domain/ports/MarkdownRendererPort"
 // 1つのMarkdownドキュメントに対する同期処理を閉じ込め、責務を局所化する。
 export class LivePreviewSession implements vscode.Disposable {
   private readonly sourceUri: string;
+  private readonly logFilePath: string;
   private readonly previewPanel: VsCodePreviewPanel;
   private readonly updatePreviewUseCase: UpdatePreviewUseCase;
   private readonly disposables: vscode.Disposable[] = [];
@@ -25,6 +27,9 @@ export class LivePreviewSession implements vscode.Disposable {
     private readonly onDisposeSession: () => void
   ) {
     this.sourceUri = editor.document.uri.toString();
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+    const logDir = workspaceFolder?.uri.fsPath ?? path.dirname(editor.document.fileName);
+    this.logFilePath = path.join(logDir, "log.json");
 
     // プレビューは常に隣ペインへ出し、ソースタブの置換を避ける。
     const targetColumn = vscode.ViewColumn.Beside;
@@ -93,14 +98,12 @@ export class LivePreviewSession implements vscode.Disposable {
         }
 
         if (message.type === "runtimeDiagnostics") {
-          const suffix = message.details ? `\n${message.details}` : "";
-          const text = `Live Preview runtime: ${message.message}${suffix}`;
-          if (message.level === "error") {
-            void vscode.window.showErrorMessage(text);
-          } else if (message.level === "warn") {
-            void vscode.window.showWarningMessage(text);
+          if (message.level === "info") {
+            console.info(`[Markdown Live Editor] ${message.message}${message.details ? `\n${message.details}` : ""}`);
+            return;
           }
 
+          void this.raiseRuntimeDiagnostics(message.message, message.details);
           return;
         }
 
@@ -189,5 +192,63 @@ export class LivePreviewSession implements vscode.Disposable {
     const lastLine = Math.max(0, document.lineCount - 1);
     const lastCharacter = document.lineAt(lastLine).text.length;
     return new vscode.Range(0, 0, lastLine, lastCharacter);
+  }
+
+  private async raiseRuntimeDiagnostics(message: string, details?: string): Promise<void> {
+    const error = new Error(details ? `${message}\n${details}` : message);
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: "error",
+      source: "webview-runtime",
+      document: this.editor.document.uri.toString(),
+      message,
+      details: details ?? null
+    };
+
+    await this.writeRuntimeLog(logEntry);
+
+    const suffix = details ? `\n${details}` : "";
+    const text = `Live Preview 実行時エラー: ${message}${suffix}\nログ: ${this.logFilePath}`;
+    console.error("[Markdown Live Editor] Live Preview 実行時エラー", error);
+    void vscode.window.showErrorMessage(text);
+
+    throw error;
+  }
+
+  private async writeRuntimeLog(entry: {
+    timestamp: string;
+    level: "error";
+    source: string;
+    document: string;
+    message: string;
+    details: string | null;
+  }): Promise<void> {
+    const initialPayload = {
+      updatedAt: entry.timestamp,
+      entries: [entry]
+    };
+
+    try {
+      const current = await fs.readFile(this.logFilePath, "utf8");
+      const parsed = JSON.parse(current) as {
+        updatedAt?: string;
+        entries?: Array<typeof entry>;
+      };
+      const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+      entries.push(entry);
+      const nextPayload = {
+        updatedAt: entry.timestamp,
+        entries
+      };
+      await fs.writeFile(this.logFilePath, `${JSON.stringify(nextPayload, null, 2)}\n`, "utf8");
+      return;
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code !== "ENOENT") {
+        console.error("[Markdown Live Editor] log.json の読み込みに失敗したため、新規作成します。", error);
+      }
+    }
+
+    await fs.writeFile(this.logFilePath, `${JSON.stringify(initialPayload, null, 2)}\n`, "utf8");
   }
 }
