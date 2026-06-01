@@ -198,7 +198,7 @@ export class LivePreviewSession implements vscode.Disposable {
     const error = new Error(details ? `${message}\n${details}` : message);
     const logEntry = {
       timestamp: new Date().toISOString(),
-      level: "error",
+      level: "error" as const,
       source: "webview-runtime",
       document: this.editor.document.uri.toString(),
       message,
