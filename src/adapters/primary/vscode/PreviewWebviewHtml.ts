@@ -98,6 +98,12 @@ export function buildPreviewWebviewHtml(input: PreviewWebviewHtmlInput): string 
 
     #preview-content {
       min-height: calc(100vh - 110px);
+      cursor: text;
+      caret-color: var(--fg);
+    }
+
+    #preview-content:focus {
+      outline: none;
     }
 
     #source-editor {
@@ -151,7 +157,7 @@ export function buildPreviewWebviewHtml(input: PreviewWebviewHtmlInput): string 
   </header>
 
   <main class="preview-shell" data-mode="live-preview">
-    <div id="preview-content"></div>
+    <div id="preview-content" contenteditable="true" spellcheck="false"></div>
   </main>
 
   <section class="editor-shell" data-mode="live-preview">
@@ -266,8 +272,29 @@ export function buildPreviewWebviewHtml(input: PreviewWebviewHtmlInput): string 
       vscode.postMessage({ type: "markdownEdited", markdown });
     }
 
+    function flushPreviewContent() {
+      const markdown = previewContent.innerText;
+      if (markdown === lastSyncedMarkdown) {
+        return;
+      }
+
+      lastSyncedMarkdown = markdown;
+      vscode.postMessage({ type: "markdownEdited", markdown });
+    }
+
     modeLiveButton.addEventListener("click", () => applyMode("live-preview"));
     modeSourceButton.addEventListener("click", () => applyMode("source"));
+
+    previewContent.addEventListener("input", () => {
+      window.clearTimeout(pendingEditTimer);
+      pendingEditTimer = window.setTimeout(() => {
+        flushPreviewContent();
+      }, 160);
+    });
+
+    previewContent.addEventListener("blur", () => {
+      flushPreviewContent();
+    });
 
     sourceEditor.addEventListener("input", () => {
       window.clearTimeout(pendingEditTimer);
@@ -289,6 +316,8 @@ export function buildPreviewWebviewHtml(input: PreviewWebviewHtmlInput): string 
       event.preventDefault();
       if (mode === "source") {
         flushSourceEditor();
+      } else {
+        flushPreviewContent();
       }
     }, true);
 
@@ -326,9 +355,12 @@ export function buildPreviewWebviewHtml(input: PreviewWebviewHtmlInput): string 
       const nextRendered = String(message.renderedHtml || "");
       const nextMarkdown = String(message.sourceMarkdown || "");
       const sourceFocused = document.activeElement === sourceEditor;
+      const previewFocused = previewContent.contains(document.activeElement);
 
-      previewContent.innerHTML = nextRendered;
-      scheduleRenderMermaid();
+      if (!previewFocused) {
+        previewContent.innerHTML = nextRendered;
+        scheduleRenderMermaid();
+      }
 
       if (!sourceFocused && sourceEditor.value !== nextMarkdown) {
         sourceEditor.value = nextMarkdown;
