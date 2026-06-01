@@ -17,7 +17,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   private readonly targetColumn: vscode.ViewColumn;
   private isInitialized = false;
 
-  public constructor(initialTitle: string, extensionUri: vscode.Uri, targetColumn: vscode.ViewColumn) {
+  public constructor(extensionUri: vscode.Uri, targetColumn: vscode.ViewColumn) {
     // 読み込み可能な資産を限定し、Webviewの攻撃面を最小化する。
     this.targetColumn = targetColumn;
     this.nodeModulesUri = vscode.Uri.joinPath(extensionUri, "node_modules");
@@ -28,8 +28,11 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     this.panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
-      initialTitle,
-      this.targetColumn,
+      "Editable Preview",
+      {
+        viewColumn: this.targetColumn,
+        preserveFocus: false
+      },
       {
         enableScripts: true,
         localResourceRoots
@@ -38,7 +41,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   }
 
   public show(renderedHtml: string, sourceTitle: string, sourceMarkdown: string): void {
-    this.panel.title = `Preview: ${sourceTitle}`;
+    this.panel.title = "Editable Preview";
 
     if (!this.isInitialized) {
       this.panel.webview.html = this.wrapHtml(renderedHtml, sourceTitle, sourceMarkdown);
@@ -62,7 +65,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   }
 
   public reveal(): void {
-    this.panel.reveal(this.targetColumn, true);
+    this.panel.reveal(this.targetColumn, false);
   }
 
   public onDidDispose(listener: () => void): vscode.Disposable {
@@ -91,6 +94,15 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     const nonce = this.createNonce();
     const encodedSource = encodeURIComponent(sourceMarkdown);
     const encodedRendered = encodeURIComponent(renderedHtml);
+    const monacoLoaderUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "monaco-editor", "min", "vs", "loader.js")
+    );
+    const monacoBaseUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "monaco-editor", "min", "vs")
+    );
+    const monacoEditorCssUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "monaco-editor", "min", "vs", "editor", "editor.main.css")
+    );
     const mermaidScriptUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.nodeModulesUri, "mermaid", "dist", "mermaid.min.js")
     );
@@ -101,9 +113,9 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       // 外部スクリプト実行を抑制し、Webview内の実行境界を明示する。
       "default-src 'none'",
       `img-src ${this.panel.webview.cspSource} https: data:`,
-      `style-src ${this.panel.webview.cspSource} 'unsafe-inline'`,
+      `style-src ${this.panel.webview.cspSource} data: 'unsafe-inline'`,
       `font-src ${this.panel.webview.cspSource}`,
-      `script-src 'nonce-${nonce}' ${this.panel.webview.cspSource}`
+      `script-src 'nonce-${nonce}' 'unsafe-eval' ${this.panel.webview.cspSource}`
     ].join("; ");
 
     return `<!DOCTYPE html>
@@ -112,8 +124,9 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <title>Preview: ${this.escapeHtml(sourceTitle)}</title>
+  <title>Editable Preview</title>
   <link rel="stylesheet" href="${katexCssUri}" />
+  <link rel="stylesheet" href="${monacoEditorCssUri}" />
   <style>
     :root {
       color-scheme: light dark;
@@ -211,18 +224,22 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       display: block;
     }
 
-    .editor-shell textarea {
+    #markdown-editor {
       width: 100%;
       min-height: calc(100vh - 108px);
       box-sizing: border-box;
-      resize: vertical;
       border-radius: 10px;
       border: 1px solid var(--border);
-      background: color-mix(in srgb, var(--bg) 92%, transparent);
-      color: var(--fg);
-      font: inherit;
-      line-height: 1.6;
-      padding: 14px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    #markdown-editor .monaco-editor {
+      border-radius: 10px;
+    }
+
+    #markdown-editor .monaco-editor .overflow-guard {
+      border-radius: 10px;
     }
 
     .preview-shell[data-mode="source"] {
@@ -271,6 +288,22 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     .mermaid {
       overflow-x: auto;
       padding: 8px 0;
+      min-height: 1rem;
+    }
+
+    .mermaid svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .mermaid-error {
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+      background: color-mix(in srgb, var(--muted) 65%, transparent);
+      color: var(--fg);
+      white-space: pre-wrap;
     }
 
     .katex-display {
@@ -291,24 +324,61 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     <div id="preview-content"></div>
   </main>
   <section class="editor-shell" data-mode="live-preview">
-    <textarea id="markdown-editor" spellcheck="false" aria-label="Markdown source"></textarea>
+    <div id="markdown-editor" aria-label="Markdown source"></div>
   </section>
   <script nonce="${nonce}" src="${mermaidScriptUri}"></script>
+  <script nonce="${nonce}" src="${monacoLoaderUri}"></script>
   <script type="module" nonce="${nonce}">
-
     const vscode = acquireVsCodeApi();
     const modeLiveButton = document.getElementById("mode-live");
     const modeSourceButton = document.getElementById("mode-source");
     const previewShell = document.querySelector(".preview-shell");
     const editorShell = document.querySelector(".editor-shell");
     const previewContent = document.getElementById("preview-content");
-    const markdownEditor = document.getElementById("markdown-editor");
+    const monacoEditorHost = document.getElementById("markdown-editor");
     const initialMarkdown = decodeURIComponent("${encodedSource}");
     const initialRenderedHtml = decodeURIComponent("${encodedRendered}");
-    markdownEditor.value = initialMarkdown;
-    previewContent.innerHTML = initialRenderedHtml;
 
     let mode = "live-preview";
+    let mermaidRenderGeneration = 0;
+    let mermaidRenderScheduled = false;
+    let suppressOutgoingScroll = false;
+    let frameScheduled = false;
+    let pendingEditTimer;
+    let lastSyncedMarkdown = initialMarkdown;
+    let monacoModule = null;
+    let monacoEditor = null;
+    let fallbackEditor = null;
+    let monacoBootPromise = null;
+    let pendingInitialInsert = "";
+
+    previewContent.innerHTML = initialRenderedHtml;
+
+    function resolveTheme() {
+      // VS Codeのテーマ種別に追従し、図とエディタの見た目を統一する。
+      if (document.body.classList.contains("vscode-high-contrast") || document.body.classList.contains("vscode-high-contrast-light")) {
+        return "high-contrast";
+      }
+
+      if (document.body.classList.contains("vscode-light")) {
+        return "light";
+      }
+
+      return "dark";
+    }
+
+    function resolveMonacoTheme() {
+      const theme = resolveTheme();
+      if (theme === "high-contrast") {
+        return "hc-black";
+      }
+
+      if (theme === "light") {
+        return "vs";
+      }
+
+      return "vs-dark";
+    }
 
     function applyMode() {
       const sourceMode = mode === "source";
@@ -319,8 +389,16 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       modeLiveButton.setAttribute("aria-selected", sourceMode ? "false" : "true");
       modeSourceButton.setAttribute("aria-selected", sourceMode ? "true" : "false");
 
-      if (sourceMode) {
-        markdownEditor.focus();
+      if (sourceMode && monacoEditor) {
+        monacoEditor.focus();
+        window.requestAnimationFrame(() => {
+          monacoEditor.layout();
+        });
+        return;
+      }
+
+      if (sourceMode && fallbackEditor) {
+        fallbackEditor.focus();
       }
     }
 
@@ -337,26 +415,12 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       switchMode("source");
     });
 
-    function resolveTheme() {
-      // VS Codeのテーマ種別に追従し、図の可読性を一貫して保つ。
-      if (document.body.classList.contains("vscode-high-contrast") || document.body.classList.contains("vscode-high-contrast-light")) {
-        return "high-contrast";
-      }
-
-      if (document.body.classList.contains("vscode-light")) {
-        return "light";
-      }
-
-      return "dark";
-    }
-
     function mermaidThemeVariables(theme) {
       const styles = getComputedStyle(document.body);
       const fg = styles.getPropertyValue("--fg").trim();
       const bg = styles.getPropertyValue("--bg").trim();
 
       if (theme === "high-contrast") {
-        // 高コントラスト時は背景/線/文字の差を優先して視認性を確保する。
         return {
           primaryColor: bg,
           primaryTextColor: fg,
@@ -397,6 +461,68 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       };
     }
 
+    function currentMermaidSource(container) {
+      const storedSource = container.dataset.mermaidSource;
+      if (storedSource && storedSource.trim().length > 0) {
+        return storedSource;
+      }
+
+      const fallbackSource = (container.textContent ?? "").trim();
+      container.dataset.mermaidSource = fallbackSource;
+      return fallbackSource;
+    }
+
+    function renderMermaidBlocks() {
+      if (!hasMermaid) {
+        return;
+      }
+
+      const generation = ++mermaidRenderGeneration;
+      const blocks = Array.from(previewContent.querySelectorAll(".mermaid"));
+
+      blocks.forEach((container, index) => {
+        const source = currentMermaidSource(container);
+        if (!source) {
+          return;
+        }
+
+        const id = "mermaid-" + generation + "-" + index;
+
+        mermaid.render(id, source).then(({ svg, bindFunctions }) => {
+          if (generation !== mermaidRenderGeneration || !container.isConnected) {
+            return;
+          }
+
+          container.classList.remove("mermaid-error");
+          container.innerHTML = svg;
+
+          if (bindFunctions) {
+            bindFunctions(container);
+          }
+        }).catch((error) => {
+          if (generation !== mermaidRenderGeneration || !container.isConnected) {
+            return;
+          }
+
+          console.error("Mermaid rendering failed:", error);
+          container.classList.add("mermaid-error");
+          container.textContent = source;
+        });
+      });
+    }
+
+    function scheduleMermaidRender() {
+      if (mermaidRenderScheduled) {
+        return;
+      }
+
+      mermaidRenderScheduled = true;
+      window.requestAnimationFrame(() => {
+        mermaidRenderScheduled = false;
+        renderMermaidBlocks();
+      });
+    }
+
     const mermaid = window.mermaid;
     const hasMermaid = Boolean(mermaid);
 
@@ -412,37 +538,6 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       });
     }
 
-    let mermaidSeq = 0;
-
-    function setupMermaid() {
-      if (!hasMermaid) {
-        return;
-      }
-
-      const blocks = document.querySelectorAll("pre > code.language-mermaid");
-      blocks.forEach((codeBlock) => {
-        const pre = codeBlock.parentElement;
-        if (!pre || !pre.parentElement) {
-          return;
-        }
-
-        const text = (codeBlock.textContent ?? "").trim();
-        const id = "mermaid-" + (mermaidSeq++);
-        const container = document.createElement("div");
-        container.className = "mermaid";
-        pre.parentElement.replaceChild(container, pre);
-
-        mermaid.render(id, text).then(({ svg, bindFunctions }) => {
-          container.innerHTML = svg;
-          if (bindFunctions) {
-            bindFunctions(container);
-          }
-        }).catch((e) => {
-          console.error("Mermaid rendering failed:", e);
-        });
-      });
-    }
-
     function clampRatio(value) {
       if (Number.isNaN(value)) {
         return 0;
@@ -452,7 +547,6 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     }
 
     function applyScrollByRatio(ratio) {
-      // 拡張側起点のスクロール中は送信を止め、自己反射ループを防ぐ。
       suppressOutgoingScroll = true;
       const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
       if (scrollHeight <= 0) {
@@ -478,40 +572,129 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       return clampRatio(window.scrollY / scrollHeight);
     }
 
-    let suppressOutgoingScroll = false;
-    let frameScheduled = false;
-    let pendingEditTimer;
-    let lastSyncedMarkdown = initialMarkdown;
-
-    function applyIncomingContent(renderedHtml, sourceMarkdown) {
-      previewContent.innerHTML = renderedHtml;
-      setupMermaid();
-
-      const shouldPatchEditor = mode !== "source" || document.activeElement !== markdownEditor;
-      if (shouldPatchEditor) {
-        markdownEditor.value = sourceMarkdown;
+    function isSourceEditorFocused() {
+      if (monacoEditor) {
+        return monacoEditor.hasTextFocus();
       }
 
-      lastSyncedMarkdown = sourceMarkdown;
+      return Boolean(fallbackEditor && document.activeElement === fallbackEditor);
     }
 
-    function sendEditedMarkdown() {
-      if (markdownEditor.value === lastSyncedMarkdown) {
+    function enableFallbackEditor() {
+      if (fallbackEditor) {
         return;
       }
 
-      lastSyncedMarkdown = markdownEditor.value;
+      const textarea = document.createElement("textarea");
+      textarea.spellcheck = false;
+      textarea.value = lastSyncedMarkdown;
+      textarea.style.width = "100%";
+      textarea.style.minHeight = "calc(100vh - 108px)";
+      textarea.style.boxSizing = "border-box";
+      textarea.style.border = "1px solid var(--border)";
+      textarea.style.borderRadius = "10px";
+      textarea.style.background = "color-mix(in srgb, var(--bg) 92%, transparent)";
+      textarea.style.color = "var(--fg)";
+      textarea.style.fontFamily = "var(--vscode-editor-font-family)";
+      textarea.style.fontSize = "var(--vscode-editor-font-size)";
+      textarea.style.lineHeight = "1.6";
+      textarea.style.padding = "14px";
+
+      textarea.addEventListener("input", () => {
+        window.clearTimeout(pendingEditTimer);
+        pendingEditTimer = window.setTimeout(() => {
+          sendEditedMarkdown();
+        }, 180);
+      });
+
+      textarea.addEventListener("blur", () => {
+        sendEditedMarkdown();
+      });
+
+      monacoEditorHost.replaceChildren(textarea);
+      fallbackEditor = textarea;
+
+      if (mode === "source") {
+        fallbackEditor.focus();
+      }
+    }
+
+    function getEditorValue() {
+      if (monacoEditor) {
+        return monacoEditor.getValue();
+      }
+
+      if (fallbackEditor) {
+        return fallbackEditor.value;
+      }
+
+      return lastSyncedMarkdown;
+    }
+
+    function setEditorValue(markdown) {
+      if (monacoEditor) {
+        if (monacoEditor.getValue() === markdown) {
+          return;
+        }
+
+        monacoEditor.setValue(markdown);
+        return;
+      }
+
+      if (!fallbackEditor) {
+        return;
+      }
+
+      if (fallbackEditor.value === markdown) {
+        return;
+      }
+
+      fallbackEditor.value = markdown;
+    }
+
+    function sendEditedMarkdown() {
+      const currentMarkdown = getEditorValue();
+      if (currentMarkdown === lastSyncedMarkdown) {
+        return;
+      }
+
+      lastSyncedMarkdown = currentMarkdown;
       vscode.postMessage({
         type: "markdownEdited",
-        markdown: markdownEditor.value
+        markdown: currentMarkdown
       });
     }
 
     function insertTextAtCursor(text) {
-      const start = markdownEditor.selectionStart;
-      const end = markdownEditor.selectionEnd;
-      markdownEditor.setRangeText(text, start, end, "end");
-      markdownEditor.dispatchEvent(new Event("input", { bubbles: true }));
+      if (fallbackEditor) {
+        const start = fallbackEditor.selectionStart;
+        const end = fallbackEditor.selectionEnd;
+        fallbackEditor.setRangeText(text, start, end, "end");
+        fallbackEditor.dispatchEvent(new Event("input", { bubbles: true }));
+        fallbackEditor.focus();
+        return;
+      }
+
+      if (!monacoEditor || !monacoModule) {
+        pendingInitialInsert += text;
+        return;
+      }
+
+      const position = monacoEditor.getPosition();
+      if (!position) {
+        return;
+      }
+
+      const selection = monacoEditor.getSelection();
+      const range = selection || new monacoModule.Range(position.lineNumber, position.column, position.lineNumber, position.column);
+      monacoEditor.executeEdits("preview-insert", [
+        {
+          range: range,
+          text: text,
+          forceMoveMarkers: true
+        }
+      ]);
+      monacoEditor.focus();
     }
 
     function moveToSourceFromPreview(initialText) {
@@ -525,32 +708,133 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       }
     }
 
-    markdownEditor.addEventListener("input", () => {
-      window.clearTimeout(pendingEditTimer);
-      pendingEditTimer = window.setTimeout(() => {
-        sendEditedMarkdown();
-      }, 180);
-    });
+    function applyIncomingContent(renderedHtml, sourceMarkdown) {
+      const hadSourceFocus = mode === "source" && isSourceEditorFocused();
+      previewContent.innerHTML = renderedHtml;
+      scheduleMermaidRender();
 
-    markdownEditor.addEventListener("blur", () => {
-      sendEditedMarkdown();
-    });
+      if (!hadSourceFocus) {
+        setEditorValue(sourceMarkdown);
+      }
 
-    markdownEditor.addEventListener("keydown", (event) => {
-      const saveWithShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
-      if (!saveWithShortcut) {
+      lastSyncedMarkdown = sourceMarkdown;
+    }
+
+    function syncMonacoTheme() {
+      if (!monacoModule || !monacoModule.editor) {
         return;
       }
 
-      event.preventDefault();
-      sendEditedMarkdown();
+      monacoModule.editor.setTheme(resolveMonacoTheme());
+    }
+
+    async function bootMonaco() {
+      if (monacoBootPromise) {
+        return monacoBootPromise;
+      }
+
+      monacoBootPromise = (async () => {
+        await new Promise((resolve, reject) => {
+          const amdRequire = globalThis.require;
+          if (typeof amdRequire !== "function") {
+            reject(new Error("Monaco AMD loader is not available in webview."));
+            return;
+          }
+
+          amdRequire.config({ paths: { vs: "${monacoBaseUri}" } });
+          amdRequire(["vs/editor/editor.main", "vs/basic-languages/markdown/markdown.contribution"], () => {
+            resolve(undefined);
+          }, (error) => {
+            reject(error);
+          });
+        });
+
+        const monaco = globalThis.monaco;
+        if (!monaco) {
+          throw new Error("Monaco global was not initialized.");
+        }
+
+        monacoModule = monaco;
+        monaco.editor.setTheme(resolveMonacoTheme());
+        monacoEditor = monaco.editor.create(monacoEditorHost, {
+          value: initialMarkdown,
+          language: "markdown",
+          automaticLayout: true,
+          minimap: {
+            enabled: false
+          },
+          fontSize: 13,
+          lineNumbers: "on",
+          scrollBeyondLastLine: false,
+          smoothScrolling: true,
+          tabSize: 2,
+          wordWrap: "on",
+          renderWhitespace: "selection",
+          fixedOverflowWidgets: true,
+          padding: {
+            top: 14,
+            bottom: 14
+          }
+        });
+
+        setEditorValue(lastSyncedMarkdown);
+
+        monacoEditor.onDidChangeModelContent(() => {
+          window.clearTimeout(pendingEditTimer);
+          pendingEditTimer = window.setTimeout(() => {
+            sendEditedMarkdown();
+          }, 180);
+        });
+
+        monacoEditor.onDidBlurEditorText(() => {
+          sendEditedMarkdown();
+        });
+
+        if (pendingInitialInsert) {
+          const queuedInsert = pendingInitialInsert;
+          pendingInitialInsert = "";
+          insertTextAtCursor(queuedInsert);
+        }
+
+        if (mode === "source") {
+          window.requestAnimationFrame(() => {
+            monacoEditor.layout();
+          });
+        }
+      })();
+
+      monacoBootPromise.catch((error) => {
+        console.error("Failed to initialize Monaco editor.", error);
+        enableFallbackEditor();
+      });
+
+      return monacoBootPromise;
+    }
+
+    previewContent.addEventListener("click", (event) => {
+      if (mode !== "live-preview") {
+        return;
+      }
+
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+
+      moveToSourceFromPreview("");
     });
 
     previewContent.addEventListener("dblclick", () => {
       moveToSourceFromPreview("");
     });
 
-    window.addEventListener("keydown", (event) => {
+    document.addEventListener("keydown", (event) => {
+      const saveWithShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+      if (saveWithShortcut) {
+        event.preventDefault();
+        sendEditedMarkdown();
+        return;
+      }
+
       if (mode !== "live-preview") {
         return;
       }
@@ -569,14 +853,13 @@ export class VsCodePreviewPanel implements vscode.Disposable {
         event.preventDefault();
         moveToSourceFromPreview("\n");
       }
-    });
+    }, true);
 
     window.addEventListener("scroll", () => {
       if (suppressOutgoingScroll || frameScheduled) {
         return;
       }
 
-      // 高頻度イベントをフレーム単位に間引き、入力体験を安定させる。
       frameScheduled = true;
       window.requestAnimationFrame(() => {
         frameScheduled = false;
@@ -603,7 +886,18 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       }
     });
 
-    setupMermaid();
+    const mermaidThemeObserver = new MutationObserver(() => {
+      if (hasMermaid) {
+        scheduleMermaidRender();
+      }
+
+      syncMonacoTheme();
+    });
+    mermaidThemeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    enableFallbackEditor();
+    void bootMonaco();
+    renderMermaidBlocks();
     applyMode();
   </script>
 </body>

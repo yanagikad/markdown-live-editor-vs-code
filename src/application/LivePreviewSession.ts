@@ -26,9 +26,9 @@ export class LivePreviewSession implements vscode.Disposable {
   ) {
     this.sourceUri = editor.document.uri.toString();
 
-    const sourceName = path.basename(editor.document.fileName);
-    const targetColumn = editor.viewColumn ?? vscode.ViewColumn.Active;
-    this.previewPanel = new VsCodePreviewPanel(`Preview: ${sourceName}`, extensionUri, targetColumn);
+    // プレビューは常に隣ペインへ出し、ソースタブの置換を避ける。
+    const targetColumn = vscode.ViewColumn.Beside;
+    this.previewPanel = new VsCodePreviewPanel(extensionUri, targetColumn);
     const outputAdapter = new VsCodePreviewOutputAdapter(this.previewPanel);
     this.updatePreviewUseCase = new UpdatePreviewUseCase(renderer, outputAdapter);
   }
