@@ -4,6 +4,11 @@ import * as vscode from "vscode";
 
 import { VsCodePreviewOutputAdapter } from "../adapters/primary/vscode/VsCodePreviewOutputAdapter";
 import { VsCodePreviewPanel } from "../adapters/primary/vscode/VsCodePreviewPanel";
+import {
+  isMarkdownEditedMessage,
+  isPreviewScrolledMessage,
+  isRuntimeDiagnosticsMessage
+} from "../adapters/primary/vscode/PreviewMessages";
 import { UpdatePreviewUseCase } from "../domain/usecases/UpdatePreviewUseCase";
 import type { MarkdownRendererPort } from "../domain/ports/MarkdownRendererPort";
 
@@ -94,12 +99,12 @@ export class LivePreviewSession implements vscode.Disposable {
           return;
         }
 
-        if (message.type === "previewScrolled") {
+        if (isPreviewScrolledMessage(message)) {
           this.syncEditorByRatio(message.ratio);
           return;
         }
 
-        if (message.type === "runtimeDiagnostics") {
+        if (isRuntimeDiagnosticsMessage(message)) {
           if (message.level === "info") {
             console.info(`[Markdown Live Editor] ${message.message}${message.details ? `\n${message.details}` : ""}`);
             void this.appendRuntimeLog("info", message.message, message.details);
@@ -110,7 +115,9 @@ export class LivePreviewSession implements vscode.Disposable {
           return;
         }
 
-        this.enqueueMarkdownUpdate(message.markdown);
+        if (isMarkdownEditedMessage(message)) {
+          this.enqueueMarkdownUpdate(message.markdown);
+        }
       })
     );
 

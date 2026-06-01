@@ -97,3 +97,48 @@ src/
 
 - 現在はMarkdownドキュメントのみを対象にプレビューを開きます
 - 複数ファイルで個別にライブプレビューセッションを持てます
+
+## 簡易化後の実行フロー
+
+以下は、現在の最小構成にした後のメッセージと描画の流れです。
+
+```mermaid
+sequenceDiagram
+	participant U as User
+	participant C as Command
+	participant L as LivePreviewController
+	participant S as LivePreviewSession
+	participant R as MarkdownItRenderer
+	participant P as VsCodePreviewPanel
+	participant W as Webview JS
+
+	U->>C: markdownLiveEditor.openPreview
+	C->>L: openPreviewForEditor(editor)
+	L->>S: new session + start()
+	S->>R: render(markdown)
+	R-->>S: renderedHtml
+	S->>P: show(renderedHtml, sourceMarkdown)
+	P->>W: webview.html set (fresh each time)
+	W->>W: render HTML + mermaid
+
+	U->>W: Source Modeで編集
+	W->>S: postMessage(markdownEdited)
+	S->>S: applyEdit(document)
+	S->>R: render(updated markdown)
+	R-->>S: renderedHtml
+	S->>P: show(new renderedHtml, new sourceMarkdown)
+```
+
+## どこでコケていたか（今回の注釈）
+
+1. 旧実装は経路が多すぎて、表示の実体が追いにくかった
+: Toast UI / フォールバック textarea / block editor / Monaco / 初期メッセージキューが同時に存在し、どの UI が有効か一見で判別しづらい状態でした。
+
+2. Live Preview 側が renderedHtml ではなく sourceMarkdown を主に使う経路があり、調査用 class 置換が見えないことがあった
+: 「TSで変換したはずなのに preview で見えない」という症状が起きる要因でした。
+
+3. webview.html を初回のみ差し替える設計だと、古い UI が残って調査用表示が現れないことがある
+: 現在は毎回 fresh HTML をセットする簡易方式に変更しています。
+
+4. log.json は error 発生時だけ作る実装だと、平常時にファイルが無い
+: 現在はセッション開始 info ログでも作成されるようにしています。
