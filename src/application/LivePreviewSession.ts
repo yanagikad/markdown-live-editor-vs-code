@@ -92,6 +92,18 @@ export class LivePreviewSession implements vscode.Disposable {
           return;
         }
 
+        if (message.type === "runtimeDiagnostics") {
+          const suffix = message.details ? `\n${message.details}` : "";
+          const text = `Live Preview runtime: ${message.message}${suffix}`;
+          if (message.level === "error") {
+            void vscode.window.showErrorMessage(text);
+          } else if (message.level === "warn") {
+            void vscode.window.showWarningMessage(text);
+          }
+
+          return;
+        }
+
         this.enqueueMarkdownUpdate(message.markdown);
       })
     );

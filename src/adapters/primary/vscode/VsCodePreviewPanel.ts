@@ -8,6 +8,11 @@ export type PreviewIncomingMessage = {
 } | {
   type: "markdownEdited";
   markdown: string;
+} | {
+  type: "runtimeDiagnostics";
+  level: "info" | "warn" | "error";
+  message: string;
+  details?: string;
 };
 
 // Webview境界を一箇所で管理し、表示ロジックと拡張本体を分離する。
@@ -109,12 +114,22 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     const katexCssUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.nodeModulesUri, "katex", "dist", "katex.min.css")
     );
+    const toastUiCssUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "@toast-ui", "editor", "dist", "toastui-editor.css")
+    );
+    const toastUiScriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.nodeModulesUri, "@toast-ui", "editor", "dist", "toastui-editor.js")
+    );
+
     const csp = [
       // 外部スクリプト実行を抑制し、Webview内の実行境界を明示する。
       "default-src 'none'",
       `img-src ${this.panel.webview.cspSource} https: data:`,
+      `connect-src ${this.panel.webview.cspSource} https:`,
       `style-src ${this.panel.webview.cspSource} data: 'unsafe-inline'`,
       `font-src ${this.panel.webview.cspSource}`,
+      `worker-src ${this.panel.webview.cspSource} blob:`,
+      `child-src ${this.panel.webview.cspSource} blob:`,
       `script-src 'nonce-${nonce}' 'unsafe-eval' ${this.panel.webview.cspSource}`
     ].join("; ");
 
@@ -126,6 +141,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <title>Editable Preview</title>
   <link rel="stylesheet" href="${katexCssUri}" />
+  <link rel="stylesheet" href="${toastUiCssUri}" />
   <link rel="stylesheet" href="${monacoEditorCssUri}" />
   <style>
     :root {
@@ -150,7 +166,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     .toolbar {
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 100;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -159,6 +175,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       border-bottom: 1px solid var(--border);
       background: color-mix(in srgb, var(--bg) 86%, transparent);
       backdrop-filter: blur(8px);
+      pointer-events: auto;
     }
 
     .toolbar h1 {
@@ -184,10 +201,13 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     }
 
     .mode-switch {
+      position: relative;
+      z-index: 101;
       display: inline-flex;
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
+      pointer-events: auto;
     }
 
     .mode-switch button {
@@ -208,12 +228,16 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     }
 
     main {
+      position: relative;
+      z-index: 1;
       max-width: 860px;
       margin: 0 auto;
       padding: 24px;
     }
 
     .editor-shell {
+      position: relative;
+      z-index: 1;
       max-width: 960px;
       margin: 0 auto;
       padding: 16px 24px 24px;
@@ -244,6 +268,47 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     .preview-shell[data-mode="source"] {
       display: none;
+    }
+
+    #preview-content {
+      min-height: calc(100vh - 120px);
+    }
+
+    .md-block {
+      position: relative;
+      border-radius: 6px;
+      padding: 2px 4px;
+      margin: 0 -4px;
+      cursor: text;
+      user-select: text;
+      transition: background 0.12s;
+    }
+
+    .md-block:hover {
+      background: color-mix(in srgb, var(--fg) 5%, transparent);
+    }
+
+    .block-editor {
+      display: block;
+      width: 100%;
+      min-height: 2em;
+      box-sizing: border-box;
+      border: 1px solid color-mix(in srgb, var(--fg) 35%, transparent);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
+      color: var(--fg);
+      font-family: var(--vscode-editor-font-family);
+      font-size: var(--vscode-editor-font-size);
+      line-height: 1.7;
+      padding: 8px 10px;
+      resize: none;
+      overflow: hidden;
+      outline: none;
+      tab-size: 2;
+    }
+
+    .block-editor:focus {
+      border-color: color-mix(in srgb, var(--vscode-focusBorder, var(--fg)) 80%, transparent);
     }
 
     pre {
@@ -310,34 +375,202 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       overflow-x: auto;
       overflow-y: hidden;
     }
+
+    .runtime-error-banner {
+      position: sticky;
+      top: 50px;
+      z-index: 120;
+      margin: 10px auto;
+      max-width: 860px;
+      box-sizing: border-box;
+      border: 1px solid color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 45%, transparent);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 12%, var(--bg));
+      color: var(--fg);
+      padding: 10px 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .runtime-error-banner[hidden] {
+      display: none;
+    }
+
+    .runtime-error-banner strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    .runtime-boot-banner {
+      position: sticky;
+      top: 50px;
+      z-index: 121;
+      margin: 10px auto;
+      max-width: 860px;
+      box-sizing: border-box;
+      border: 1px solid color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 42%, transparent);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 12%, var(--bg));
+      color: var(--fg);
+      padding: 10px 14px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .runtime-boot-banner[data-state="ok"] {
+      display: none;
+    }
+
+    .runtime-status {
+      position: sticky;
+      top: 50px;
+      z-index: 119;
+      margin: 6px auto;
+      max-width: 860px;
+      box-sizing: border-box;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 11px;
+      opacity: 0.84;
+      background: color-mix(in srgb, var(--bg) 90%, transparent);
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
   <header class="toolbar">
     <h1>Live Preview</h1>
     <div class="mode-switch" role="tablist" aria-label="Preview mode switch">
-      <button id="mode-live" type="button" role="tab" aria-selected="true">Live Preview</button>
-      <button id="mode-source" type="button" role="tab" aria-selected="false">Source Mode</button>
+      <button id="mode-live" type="button" role="tab" data-active="true" aria-selected="true">Live Preview</button>
+      <button id="mode-source" type="button" role="tab" data-active="false" aria-selected="false">Source Mode</button>
     </div>
   </header>
   <main class="preview-shell" data-mode="live-preview">
+    <div id="runtime-boot-banner" class="runtime-boot-banner" data-state="pending" role="status">
+      Initializing Live Preview runtime... (if this stays visible, JavaScript may be blocked before module start)
+    </div>
+    <div id="runtime-error-banner" class="runtime-error-banner" role="alert" hidden>
+      <strong>Live Preview WYSIWYG failed to start</strong>
+      <div id="runtime-error-text"></div>
+    </div>
+    <div id="runtime-status" class="runtime-status" role="status">status: booting...</div>
     <div id="preview-content"></div>
   </main>
   <section class="editor-shell" data-mode="live-preview">
     <div id="markdown-editor" aria-label="Markdown source"></div>
   </section>
+  <script nonce="${nonce}">
+    window.__markdownLiveEditorState = {
+      ready: false,
+      pendingMessages: [],
+      processMessage: null,
+      moduleStarted: false,
+      reportRuntimeError: null
+    };
+
+    const bootBanner = document.getElementById("runtime-boot-banner");
+    if (bootBanner) {
+      bootBanner.textContent = "Bootstrap script is running. Waiting for module initialization...";
+      bootBanner.setAttribute("data-state", "bootstrap");
+    }
+
+    const runtimeErrorBanner = document.getElementById("runtime-error-banner");
+    const runtimeErrorText = document.getElementById("runtime-error-text");
+
+    function reportRuntimeError(message, details) {
+      if (bootBanner) {
+        bootBanner.textContent = "Runtime error detected before successful startup.";
+        bootBanner.setAttribute("data-state", "error");
+      }
+
+      if (!runtimeErrorBanner || !runtimeErrorText) {
+        return;
+      }
+
+      const detailText = details ? "\n" + String(details) : "";
+      runtimeErrorText.textContent = String(message) + detailText;
+      runtimeErrorBanner.hidden = false;
+    }
+
+    window.__markdownLiveEditorState.reportRuntimeError = reportRuntimeError;
+
+    window.addEventListener("error", (event) => {
+      if (event.error && event.error.stack) {
+        reportRuntimeError("JavaScript runtime error.", event.error.stack);
+        return;
+      }
+
+      const source = event.filename ? event.filename + ":" + event.lineno + ":" + event.colno : "unknown";
+      reportRuntimeError("JavaScript runtime error.", String(event.message || "Unknown error") + " @ " + source);
+    });
+
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason && event.reason.stack ? event.reason.stack : String(event.reason ?? "Unknown rejection reason");
+      reportRuntimeError("Unhandled promise rejection.", reason);
+    });
+
+    window.addEventListener("error", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLScriptElement) && !(target instanceof HTMLLinkElement)) {
+        return;
+      }
+
+      const src = target instanceof HTMLScriptElement ? target.src : target.href;
+      reportRuntimeError("Failed to load required webview asset.", src || "Unknown resource");
+    }, true);
+
+    window.addEventListener("message", (event) => {
+      const state = window.__markdownLiveEditorState;
+      if (!state.ready || typeof state.processMessage !== "function") {
+        state.pendingMessages.push(event.data);
+        return;
+      }
+
+      state.processMessage(event.data);
+    });
+
+    window.setTimeout(() => {
+      const state = window.__markdownLiveEditorState;
+      if (!state.moduleStarted) {
+        const banner = document.getElementById("runtime-boot-banner");
+        if (banner) {
+          banner.textContent = "Module script did not start. Possible CSP block or script load error.";
+          banner.setAttribute("data-state", "error");
+        }
+      }
+    }, 1400);
+  </script>
+  <script nonce="${nonce}" src="${toastUiScriptUri}"></script>
   <script nonce="${nonce}" src="${mermaidScriptUri}"></script>
   <script nonce="${nonce}" src="${monacoLoaderUri}"></script>
   <script type="module" nonce="${nonce}">
+    const bootBanner = document.getElementById("runtime-boot-banner");
+    const bootState = globalThis.__markdownLiveEditorState;
+    if (bootState) {
+      bootState.moduleStarted = true;
+    }
+    if (bootBanner) {
+      bootBanner.textContent = "Module script started.";
+      bootBanner.setAttribute("data-state", "module");
+    }
+
     const vscode = acquireVsCodeApi();
     const modeLiveButton = document.getElementById("mode-live");
     const modeSourceButton = document.getElementById("mode-source");
     const previewShell = document.querySelector(".preview-shell");
     const editorShell = document.querySelector(".editor-shell");
     const previewContent = document.getElementById("preview-content");
+    const runtimeErrorBanner = document.getElementById("runtime-error-banner");
+    const runtimeErrorText = document.getElementById("runtime-error-text");
+    const runtimeStatus = document.getElementById("runtime-status");
     const monacoEditorHost = document.getElementById("markdown-editor");
     const initialMarkdown = decodeURIComponent("${encodedSource}");
     const initialRenderedHtml = decodeURIComponent("${encodedRendered}");
+    const webviewState = globalThis.__markdownLiveEditorState;
 
     let mode = "live-preview";
     let mermaidRenderGeneration = 0;
@@ -351,8 +584,229 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     let fallbackEditor = null;
     let monacoBootPromise = null;
     let pendingInitialInsert = "";
+    // ブロック編集の状態管理。
+    let activeBlockEl = null;
+    let activeTextarea = null;
+    let activeTextareaOpenedAt = 0;
+    let blockEditGeneration = 0;
+    let pendingUpdateHtml = null;
+    let pendingUpdateMarkdown = null;
+    let suppressWysiwygChange = false;
+    let wysiwygEditor = null;
+    let liveFallbackEditor = null;
+    let hasEditableSurface = false;
+    const ToastUIEditor = globalThis.toastui && globalThis.toastui.Editor ? globalThis.toastui.Editor : null;
 
-    previewContent.innerHTML = initialRenderedHtml;
+    function emitRuntimeDiagnostics(level, message, details) {
+      try {
+        if (typeof vscode?.postMessage === "function") {
+          vscode.postMessage({
+            type: "runtimeDiagnostics",
+            level,
+            message: String(message),
+            details: details ? String(details) : undefined
+          });
+        }
+      } catch {
+        // Avoid cascading failures from diagnostics.
+      }
+    }
+
+    function setRuntimeStatus(line) {
+      if (!runtimeStatus) {
+        return;
+      }
+
+      runtimeStatus.textContent = String(line);
+      emitRuntimeDiagnostics("info", "status", String(line));
+    }
+
+    function showRuntimeError(message, details) {
+      emitRuntimeDiagnostics("error", message, details);
+
+      if (bootState && typeof bootState.reportRuntimeError === "function") {
+        bootState.reportRuntimeError(message, details);
+        return;
+      }
+
+      if (!runtimeErrorBanner || !runtimeErrorText) {
+        return;
+      }
+
+      const detailText = details ? "\n" + String(details) : "";
+      runtimeErrorText.textContent = String(message) + detailText;
+      runtimeErrorBanner.hidden = false;
+    }
+
+    function enableLiveFallbackEditor(markdown, reason) {
+      if (liveFallbackEditor) {
+        if (liveFallbackEditor.value !== markdown) {
+          liveFallbackEditor.value = markdown;
+        }
+        return;
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.className = "block-editor";
+      textarea.spellcheck = false;
+      textarea.value = markdown;
+      textarea.style.minHeight = "calc(100vh - 140px)";
+      textarea.style.width = "100%";
+
+      textarea.addEventListener("input", () => {
+        window.clearTimeout(pendingEditTimer);
+        pendingEditTimer = window.setTimeout(() => {
+          const value = textarea.value;
+          if (value !== lastSyncedMarkdown) {
+            lastSyncedMarkdown = value;
+            vscode.postMessage({ type: "markdownEdited", markdown: value });
+          }
+        }, 180);
+      });
+
+      textarea.addEventListener("blur", () => {
+        const value = textarea.value;
+        if (value !== lastSyncedMarkdown) {
+          lastSyncedMarkdown = value;
+          vscode.postMessage({ type: "markdownEdited", markdown: value });
+        }
+      });
+
+      previewContent.replaceChildren(textarea);
+      liveFallbackEditor = textarea;
+      setRuntimeStatus("status: live-fallback-editor=true reason=" + reason);
+      emitRuntimeDiagnostics("warn", "Live preview switched to fallback textarea.", reason);
+
+      if (mode === "live-preview") {
+        textarea.focus();
+      }
+    }
+
+    function hideRuntimeError() {
+      if (!runtimeErrorBanner || !runtimeErrorText) {
+        return;
+      }
+
+      runtimeErrorText.textContent = "";
+      runtimeErrorBanner.hidden = true;
+    }
+
+    function markBootOk() {
+      if (!bootBanner) {
+        return;
+      }
+
+      bootBanner.textContent = "";
+      bootBanner.setAttribute("data-state", "ok");
+    }
+
+    window.addEventListener("securitypolicyviolation", (event) => {
+      showRuntimeError(
+        "CSP blocked a required resource.",
+        "directive=" + event.violatedDirective + " blocked=" + event.blockedURI
+      );
+    });
+
+    if (!ToastUIEditor) {
+      showRuntimeError(
+        "Toast UI Editor script was not loaded in the webview.",
+        "Check CSP and asset paths under node_modules/@toast-ui/editor/dist."
+      );
+    }
+
+    if (ToastUIEditor) {
+      try {
+        wysiwygEditor = new ToastUIEditor({
+          el: previewContent,
+          initialEditType: "wysiwyg",
+          initialValue: initialMarkdown,
+          height: "calc(100vh - 120px)",
+          usageStatistics: false,
+          hideModeSwitch: true
+        });
+
+        window.requestAnimationFrame(() => {
+          const editable = previewContent.querySelector(".ProseMirror");
+          if (editable) {
+            editable.setAttribute("contenteditable", "true");
+            editable.setAttribute("tabindex", "0");
+            hasEditableSurface = true;
+          } else {
+            hasEditableSurface = false;
+          }
+
+          setRuntimeStatus(
+            "status: toastui-loaded=" + Boolean(ToastUIEditor) +
+            " editor-created=" + Boolean(wysiwygEditor) +
+            " editable-surface=" + hasEditableSurface
+          );
+        });
+
+        window.setTimeout(() => {
+          if (!hasEditableSurface) {
+            showRuntimeError(
+              "Toast UI editor created but editable surface was not found.",
+              "Switching to fallback textarea editor."
+            );
+            enableLiveFallbackEditor(lastSyncedMarkdown, "toastui-surface-missing");
+          }
+        }, 350);
+
+        previewContent.addEventListener("pointerdown", () => {
+          if (mode !== "live-preview") {
+            return;
+          }
+
+          if (wysiwygEditor && typeof wysiwygEditor.focus === "function") {
+            wysiwygEditor.focus();
+          }
+        });
+
+        wysiwygEditor.on("change", () => {
+          if (suppressWysiwygChange) {
+            return;
+          }
+
+          window.clearTimeout(pendingEditTimer);
+          pendingEditTimer = window.setTimeout(() => {
+            const markdown = wysiwygEditor.getMarkdown();
+            if (markdown !== lastSyncedMarkdown) {
+              lastSyncedMarkdown = markdown;
+              vscode.postMessage({ type: "markdownEdited", markdown });
+            }
+          }, 180);
+        });
+
+        hideRuntimeError();
+        markBootOk();
+        emitRuntimeDiagnostics("info", "Toast UI editor initialized.");
+      } catch (error) {
+        console.error("Failed to initialize Toast UI Editor.", error);
+        showRuntimeError(
+          "Toast UI Editor initialization failed.",
+          error && error.message ? error.message : String(error)
+        );
+        wysiwygEditor = null;
+      }
+    }
+
+    if (!wysiwygEditor) {
+      enableLiveFallbackEditor(initialMarkdown, "toastui-unavailable");
+      setRuntimeStatus("status: toastui-loaded=" + Boolean(ToastUIEditor) + " editor-created=false live-fallback=true");
+      markBootOk();
+      emitRuntimeDiagnostics("warn", "Toast UI unavailable; running fallback rendered view.");
+    }
+
+    function handleIncomingMessage(message) {
+      if (message?.type === "scrollToRatio") {
+        applyScrollByRatio(Number(message.ratio));
+        return;
+      }
+
+      if (message?.type === "updateContent") {
+        applyIncomingContent(String(message.renderedHtml ?? ""), String(message.sourceMarkdown ?? ""));
+      }
+    }
 
     function resolveTheme() {
       // VS Codeのテーマ種別に追従し、図とエディタの見た目を統一する。
@@ -388,12 +842,25 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       modeSourceButton.dataset.active = sourceMode ? "true" : "false";
       modeLiveButton.setAttribute("aria-selected", sourceMode ? "false" : "true");
       modeSourceButton.setAttribute("aria-selected", sourceMode ? "true" : "false");
+      if (sourceMode && activeTextarea) {
+        commitActiveBlock(false);
+      }
 
       if (sourceMode && monacoEditor) {
         monacoEditor.focus();
         window.requestAnimationFrame(() => {
           monacoEditor.layout();
         });
+        return;
+      }
+
+      if (!sourceMode && wysiwygEditor && typeof wysiwygEditor.focus === "function") {
+        wysiwygEditor.focus();
+        return;
+      }
+
+      if (!sourceMode && liveFallbackEditor) {
+        liveFallbackEditor.focus();
         return;
       }
 
@@ -577,7 +1044,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
         return monacoEditor.hasTextFocus();
       }
 
-      return Boolean(fallbackEditor && document.activeElement === fallbackEditor);
+      return Boolean(fallbackEditor && fallbackEditor.isConnected && document.activeElement === fallbackEditor);
     }
 
     function enableFallbackEditor() {
@@ -665,8 +1132,152 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       });
     }
 
+    function assembleMarkdown() {
+      if (wysiwygEditor) {
+        return wysiwygEditor.getMarkdown();
+      }
+
+      if (liveFallbackEditor) {
+        return liveFallbackEditor.value;
+      }
+
+      // 各ブロックの data-source を結合して完全な Markdown を再構築する。
+      const blocks = Array.from(previewContent.querySelectorAll(".md-block"));
+      if (blocks.length === 0) {
+        return lastSyncedMarkdown;
+      }
+
+      return blocks.map(b => decodeURIComponent(b.dataset.source ?? "")).join("\n\n") + "\n";
+    }
+
+    function commitActiveBlock(shouldSend) {
+      if (!activeTextarea || !activeBlockEl) {
+        return;
+      }
+
+      // 編集中のブロックのソースを確定する。
+      activeBlockEl.dataset.source = encodeURIComponent(activeTextarea.value);
+      activeTextarea.replaceWith(activeBlockEl);
+      activeTextarea = null;
+
+      const committedBlock = activeBlockEl;
+      activeBlockEl = null;
+
+      // 編集中に溜まった updateContent があれば今すぐ適用する。
+      if (pendingUpdateHtml !== null) {
+        const html = pendingUpdateHtml;
+        const md = pendingUpdateMarkdown ?? "";
+        pendingUpdateHtml = null;
+        pendingUpdateMarkdown = null;
+        applyIncomingContent(html, md);
+        return;
+      }
+
+      if (!shouldSend) {
+        return;
+      }
+
+      const markdown = assembleMarkdown();
+      if (markdown !== lastSyncedMarkdown) {
+        lastSyncedMarkdown = markdown;
+        vscode.postMessage({ type: "markdownEdited", markdown });
+      }
+    }
+
+    function editBlock(blockEl) {
+      if (activeBlockEl === blockEl) {
+        return;
+      }
+
+      const generation = ++blockEditGeneration;
+
+      if (activeTextarea) {
+        commitActiveBlock(true);
+      }
+
+      const source = decodeURIComponent(blockEl.dataset.source ?? "");
+      const textarea = document.createElement("textarea");
+      textarea.className = "block-editor";
+      textarea.value = source;
+      textarea.spellcheck = false;
+
+      activeBlockEl = blockEl;
+      activeTextarea = textarea;
+      activeTextareaOpenedAt = Date.now();
+      blockEl.replaceWith(textarea);
+
+      // 高さをコンテンツに合わせる。
+      function autoResize() {
+        textarea.style.height = "auto";
+        textarea.style.height = Math.max(textarea.scrollHeight, 40) + "px";
+      }
+
+      autoResize();
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      window.requestAnimationFrame(() => {
+        if (activeTextarea === textarea) {
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        }
+      });
+
+      textarea.addEventListener("input", () => {
+        autoResize();
+        activeBlockEl.dataset.source = encodeURIComponent(textarea.value);
+        window.clearTimeout(pendingEditTimer);
+        pendingEditTimer = window.setTimeout(() => {
+          const markdown = assembleMarkdown();
+          if (markdown !== lastSyncedMarkdown) {
+            lastSyncedMarkdown = markdown;
+            vscode.postMessage({ type: "markdownEdited", markdown });
+          }
+        }, 220);
+      });
+
+      textarea.addEventListener("blur", () => {
+        // 別ブロックへのクリック時は editBlock 側で commit が走るため世代確認する。
+        window.setTimeout(() => {
+          const openedRecently = Date.now() - activeTextareaOpenedAt < 220;
+          if (openedRecently && activeTextarea === textarea) {
+            textarea.focus();
+            return;
+          }
+
+          if (blockEditGeneration === generation && document.activeElement !== textarea) {
+            commitActiveBlock(true);
+          }
+        }, 140);
+      });
+
+      textarea.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          commitActiveBlock(true);
+        }
+      });
+    }
+
     function insertTextAtCursor(text) {
-      if (fallbackEditor) {
+      if (monacoEditor && monacoModule) {
+        const position = monacoEditor.getPosition();
+        if (!position) {
+          return;
+        }
+
+        const selection = monacoEditor.getSelection();
+        const range = selection || new monacoModule.Range(position.lineNumber, position.column, position.lineNumber, position.column);
+        monacoEditor.executeEdits("preview-insert", [
+          {
+            range: range,
+            text: text,
+            forceMoveMarkers: true
+          }
+        ]);
+        monacoEditor.focus();
+        return;
+      }
+
+      if (fallbackEditor && fallbackEditor.isConnected) {
         const start = fallbackEditor.selectionStart;
         const end = fallbackEditor.selectionEnd;
         fallbackEditor.setRangeText(text, start, end, "end");
@@ -675,26 +1286,7 @@ export class VsCodePreviewPanel implements vscode.Disposable {
         return;
       }
 
-      if (!monacoEditor || !monacoModule) {
-        pendingInitialInsert += text;
-        return;
-      }
-
-      const position = monacoEditor.getPosition();
-      if (!position) {
-        return;
-      }
-
-      const selection = monacoEditor.getSelection();
-      const range = selection || new monacoModule.Range(position.lineNumber, position.column, position.lineNumber, position.column);
-      monacoEditor.executeEdits("preview-insert", [
-        {
-          range: range,
-          text: text,
-          forceMoveMarkers: true
-        }
-      ]);
-      monacoEditor.focus();
+      pendingInitialInsert += text;
     }
 
     function moveToSourceFromPreview(initialText) {
@@ -709,6 +1301,48 @@ export class VsCodePreviewPanel implements vscode.Disposable {
     }
 
     function applyIncomingContent(renderedHtml, sourceMarkdown) {
+      if (wysiwygEditor) {
+        const hadSourceFocus = mode === "source" && isSourceEditorFocused();
+        const previewHasFocus = previewContent.contains(document.activeElement);
+
+        if (!previewHasFocus && wysiwygEditor.getMarkdown() !== sourceMarkdown) {
+          suppressWysiwygChange = true;
+          wysiwygEditor.setMarkdown(sourceMarkdown, false);
+          suppressWysiwygChange = false;
+        }
+
+        if (!hadSourceFocus) {
+          setEditorValue(sourceMarkdown);
+        }
+
+        lastSyncedMarkdown = sourceMarkdown;
+        return;
+      }
+
+      if (liveFallbackEditor) {
+        const hadSourceFocus = mode === "source" && isSourceEditorFocused();
+        const previewHasFocus = document.activeElement === liveFallbackEditor;
+
+        if (!previewHasFocus && liveFallbackEditor.value !== sourceMarkdown) {
+          liveFallbackEditor.value = sourceMarkdown;
+        }
+
+        if (!hadSourceFocus) {
+          setEditorValue(sourceMarkdown);
+        }
+
+        lastSyncedMarkdown = sourceMarkdown;
+        return;
+      }
+
+      // ブロック編集中は DOM 差し替えを保留し、blur 後に適用する。
+      if (activeTextarea) {
+        pendingUpdateHtml = renderedHtml;
+        pendingUpdateMarkdown = sourceMarkdown;
+        lastSyncedMarkdown = sourceMarkdown;
+        return;
+      }
+
       const hadSourceFocus = mode === "source" && isSourceEditorFocused();
       previewContent.innerHTML = renderedHtml;
       scheduleMermaidRender();
@@ -777,6 +1411,9 @@ export class VsCodePreviewPanel implements vscode.Disposable {
           }
         });
 
+        // Monaco起動後はフォールバック参照を無効化し、誤配送を防ぐ。
+        fallbackEditor = null;
+
         setEditorValue(lastSyncedMarkdown);
 
         monacoEditor.onDidChangeModelContent(() => {
@@ -811,47 +1448,65 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       return monacoBootPromise;
     }
 
-    previewContent.addEventListener("click", (event) => {
+    function findClickedBlock(event) {
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+
+      for (const node of path) {
+        if (!(node instanceof Element)) {
+          continue;
+        }
+
+        if (node.classList.contains("md-block")) {
+          return node;
+        }
+
+        const parentBlock = node.closest(".md-block");
+        if (parentBlock) {
+          return parentBlock;
+        }
+      }
+
+      return null;
+    }
+
+    previewContent.addEventListener("pointerdown", (event) => {
+      if (wysiwygEditor) {
+        return;
+      }
+
       if (mode !== "live-preview") {
         return;
       }
 
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+      const blockEl = findClickedBlock(event);
+      if (!blockEl) {
         return;
       }
 
-      moveToSourceFromPreview("");
-    });
-
-    previewContent.addEventListener("dblclick", () => {
-      moveToSourceFromPreview("");
-    });
+      // Webview内のclick/focus競合を避けるため、pointerdownで編集モードへ遷移する。
+      event.preventDefault();
+      event.stopPropagation();
+      editBlock(blockEl);
+    }, true);
 
     document.addEventListener("keydown", (event) => {
       const saveWithShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
       if (saveWithShortcut) {
         event.preventDefault();
-        sendEditedMarkdown();
+        if (mode === "live-preview") {
+          if (activeTextarea) {
+            commitActiveBlock(true);
+          } else {
+            const markdown = assembleMarkdown();
+            if (markdown !== lastSyncedMarkdown) {
+              lastSyncedMarkdown = markdown;
+              vscode.postMessage({ type: "markdownEdited", markdown });
+            }
+          }
+        } else {
+          sendEditedMarkdown();
+        }
         return;
-      }
-
-      if (mode !== "live-preview") {
-        return;
-      }
-
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      if (event.key.length === 1) {
-        event.preventDefault();
-        moveToSourceFromPreview(event.key);
-        return;
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        moveToSourceFromPreview("\n");
       }
     }, true);
 
@@ -874,17 +1529,12 @@ export class VsCodePreviewPanel implements vscode.Disposable {
       });
     }, { passive: true });
 
-    window.addEventListener("message", (event) => {
-      const message = event.data;
-      if (message?.type === "scrollToRatio") {
-        applyScrollByRatio(Number(message.ratio));
-        return;
-      }
+    webviewState.processMessage = handleIncomingMessage;
+    webviewState.ready = true;
 
-      if (message?.type === "updateContent") {
-        applyIncomingContent(String(message.renderedHtml ?? ""), String(message.sourceMarkdown ?? ""));
-      }
-    });
+    while (webviewState.pendingMessages.length > 0) {
+      handleIncomingMessage(webviewState.pendingMessages.shift());
+    }
 
     const mermaidThemeObserver = new MutationObserver(() => {
       if (hasMermaid) {
@@ -922,6 +1572,14 @@ export class VsCodePreviewPanel implements vscode.Disposable {
 
     const candidate = message as Record<string, unknown>;
     if (candidate.type === "previewScrolled" && typeof candidate.ratio === "number") {
+      return true;
+    }
+
+    if (
+      candidate.type === "runtimeDiagnostics" &&
+      (candidate.level === "info" || candidate.level === "warn" || candidate.level === "error") &&
+      typeof candidate.message === "string"
+    ) {
       return true;
     }
 

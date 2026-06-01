@@ -23,6 +23,54 @@ export class MarkdownItRenderer implements MarkdownRendererPort {
   }
 
   public render(markdown: string): string {
-    return this.engine.render(markdown);
+    // ブロック単位でラップし、Webview側でクリック編集できるようにソースを埋め込む。
+    return this.splitIntoBlocks(markdown)
+      .map((source, idx) => {
+        const inner = this.engine.render(source);
+        const encoded = encodeURIComponent(source);
+        return `<div class="md-block" data-idx="${idx}" data-source="${encoded}">${inner}</div>`;
+      })
+      .join("\n");
+  }
+
+  // 空行区切りでブロックを分割し、フェンスブロックは一塊として扱う。
+  private splitIntoBlocks(markdown: string): string[] {
+    const lines = markdown.split("\n");
+    const blocks: string[] = [];
+    let current: string[] = [];
+    let inFence = false;
+    let fenceMarker = "";
+
+    for (const line of lines) {
+      if (!inFence) {
+        const m = line.match(/^(`{3,}|~{3,})/);
+        if (m) {
+          inFence = true;
+          fenceMarker = m[1];
+          current.push(line);
+        } else if (line.trim() === "") {
+          if (current.length > 0) {
+            blocks.push(current.join("\n"));
+            current = [];
+          }
+        } else {
+          current.push(line);
+        }
+      } else {
+        current.push(line);
+        if (line.trim() === fenceMarker) {
+          inFence = false;
+          fenceMarker = "";
+          blocks.push(current.join("\n"));
+          current = [];
+        }
+      }
+    }
+
+    if (current.length > 0) {
+      blocks.push(current.join("\n"));
+    }
+
+    return blocks.filter(b => b.trim().length > 0);
   }
 }
