@@ -39,6 +39,8 @@ export class LivePreviewSession implements vscode.Disposable {
   }
 
   public start(): void {
+    void this.appendRuntimeLog("info", "セッション開始", "Live Preview セッションを開始しました。");
+
     // 初回表示で空白時間を作らないため、開始時に即レンダリングする。
     this.renderCurrentDocument();
     this.syncScrollFromLine(this.editor.visibleRanges[0]?.start.line ?? 0, this.editor.document.lineCount);
@@ -100,6 +102,7 @@ export class LivePreviewSession implements vscode.Disposable {
         if (message.type === "runtimeDiagnostics") {
           if (message.level === "info") {
             console.info(`[Markdown Live Editor] ${message.message}${message.details ? `\n${message.details}` : ""}`);
+            void this.appendRuntimeLog("info", message.message, message.details);
             return;
           }
 
@@ -196,16 +199,7 @@ export class LivePreviewSession implements vscode.Disposable {
 
   private async raiseRuntimeDiagnostics(message: string, details?: string): Promise<void> {
     const error = new Error(details ? `${message}\n${details}` : message);
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      level: "error" as const,
-      source: "webview-runtime",
-      document: this.editor.document.uri.toString(),
-      message,
-      details: details ?? null
-    };
-
-    await this.writeRuntimeLog(logEntry);
+    await this.appendRuntimeLog("error", message, details);
 
     const suffix = details ? `\n${details}` : "";
     const text = `Live Preview 実行時エラー: ${message}${suffix}\nログ: ${this.logFilePath}`;
@@ -215,9 +209,22 @@ export class LivePreviewSession implements vscode.Disposable {
     throw error;
   }
 
+  private async appendRuntimeLog(level: "info" | "error", message: string, details?: string): Promise<void> {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      level,
+      source: "webview-runtime",
+      document: this.editor.document.uri.toString(),
+      message,
+      details: details ?? null
+    };
+
+    await this.writeRuntimeLog(entry);
+  }
+
   private async writeRuntimeLog(entry: {
     timestamp: string;
-    level: "error";
+    level: "info" | "error";
     source: string;
     document: string;
     message: string;

@@ -9,9 +9,9 @@ export class MarkdownItRenderer implements MarkdownRendererPort {
   private readonly engine: MarkdownIt;
 
   public constructor() {
-    // 安全性を優先し、任意HTMLの混入を抑えた設定で初期化する。
+    // 切り分け調査のため、.md内の生HTMLをレンダリング対象に含める。
     this.engine = new MarkdownIt({
-      html: false,
+      html: true,
       linkify: true,
       typographer: true
     });

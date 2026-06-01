@@ -6,6 +6,7 @@
 
 - 箇条書き
 - aaaaaa
+- aaaaaa
 - **太字**
 - [VS Code](https://code.visualstudio.com/)
 
@@ -33,6 +34,12 @@ $$
 ## 5. Scroll Sync Check
 
 下に長いセクションを置いてスクロール同期を確認します。
+
+## 6. TS Probe (HTML class)
+
+以下の生HTMLは、TS側で class を段階的に書き換えるプローブです。
+
+<div class="probe-target stage-raw">probe-node</div>
 
 ### Section A
 
