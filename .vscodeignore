@@ -1,8 +1,0 @@
-**/.vscode/**
-**/.vscode-test/**
-src/**
-tsconfig.json
-.eslint*
-**/*.map
-.gitignore
-README.md
