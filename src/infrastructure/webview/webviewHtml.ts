@@ -21,6 +21,7 @@ export function createWebviewHtml(
     "default-src 'none'",
     "img-src https: data:",
     "font-src https:",
+    "connect-src https:",
     "style-src 'unsafe-inline' https:",
     `script-src 'nonce-${scriptNonce}' https:`
   ].join("; ");
