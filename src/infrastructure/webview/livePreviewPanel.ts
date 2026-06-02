@@ -121,7 +121,7 @@ export class LivePreviewPanel {
 
     if (message.type === "updateMarkdown") {
       await this.applyDocumentText(message.markdown);
-      this.pushRender("render", message.markdown, "vscode");
+      this.pushRender("render", message.markdown, message.source);
     }
   }
 

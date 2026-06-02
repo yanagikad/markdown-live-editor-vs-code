@@ -24,12 +24,13 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cp src/infrastructure/webview/webviewTemplate.html out/infrastructure/webview/webviewTemplate.html",
     "watch": "tsc -watch -p ./",
     "lint": "echo 'No lint configured yet'"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
+    "@types/node": "^25.9.1",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.5.4"
   },
