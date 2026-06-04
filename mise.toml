@@ -1,0 +1,13 @@
+[tools]
+# 2026年現在、拡張機能開発で安定して動くLTS（長期サポート）のNode.js
+node = "22"
+# パッケージ管理ツール（お好みに合わせてpnpmやyarnに変えてもOKです）
+npm = "latest"
+
+[tasks.build]
+description = "Webviewのフロントエンドと拡張機能のビルドを実行"
+run = "make build"
+
+[tasks.watch]
+description = "ファイルの変更を監視して自動ビルド（開発用）"
+run = "make watch"
