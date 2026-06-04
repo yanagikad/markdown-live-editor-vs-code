@@ -1,0 +1,67 @@
+body {
+    padding: 20px;
+    color: var(--vscode-editor-foreground);
+    background-color: var(--vscode-editor-background);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+/* TipTapエディター本体の外枠設定 */
+.ProseMirror {
+    outline: none;
+    min-height: 500px;
+    max-width: 850px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* GitHub風の見出しや要素のスタイリング */
+.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 0.3em;
+    margin-top: 24px;
+    margin-bottom: 16px;
+}
+
+/* WYSIWYGテーブルのスタイリング */
+.ProseMirror table {
+    border-collapse: collapse;
+    margin: 0;
+    overflow: hidden;
+    table-layout: fixed;
+    width: 100%;
+}
+
+.ProseMirror td, .ProseMirror th {
+    border: 1px solid var(--vscode-panel-border);
+    box-sizing: border-box;
+    min-width: 1em;
+    padding: 6px 13px;
+    position: relative;
+    vertical-align: top;
+}
+
+.ProseMirror th {
+    background-color: var(--vscode-editor-lineHighlightBackground);
+    font-weight: bold;
+}
+
+/* テーブルの選択・リサイズ用（TipTapの標準機能用） */
+.ProseMirror .selectedCell:after {
+    background: rgba(200, 200, 255, 0.4);
+    content: "";
+    left: 0; right: 0; top: 0; bottom: 0;
+    pointer-events: none;
+    position: absolute;
+    z-index: 2;
+}
+
+.ProseMirror .column-resize-handle {
+    background-color: #adf;
+    bottom: -2px;
+    position: absolute;
+    right: -2px;
+    top: 0;
+    width: 4px;
+    z-index: 20;
+    pointer-events: none;
+}

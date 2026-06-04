@@ -1,0 +1,61 @@
+{
+  "name": "vscode-markdown-live-preview",
+  "displayName": "Markdown Live Preview",
+  "description": "GitHub style WYSIWYG Markdown Editor using TipTap",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local/vscode-markdown-live-preview"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "markdown-live-preview.editor",
+        "displayName": "Markdown Live Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build:extension": "npx esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --format=cjs",
+    "build:webview": "npx esbuild src/webview/index.ts --bundle --outfile=media/js/webview.js --platform=browser --format=iife",
+    "build": "npm run build:extension && npm run build:webview",
+    "watch:extension": "npx esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --format=cjs --watch",
+    "watch:webview": "npx esbuild src/webview/index.ts --bundle --outfile=media/js/webview.js --platform=browser --format=iife --watch"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.1",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.30.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@tiptap/core": "^2.2.4",
+    "@tiptap/extension-table": "^2.2.4",
+    "@tiptap/extension-table-cell": "^2.2.4",
+    "@tiptap/extension-table-header": "^2.2.4",
+    "@tiptap/extension-table-row": "^2.2.4",
+    "@tiptap/starter-kit": "^2.2.4",
+    "markdown-it": "^14.1.0",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
+}

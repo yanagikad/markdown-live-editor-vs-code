@@ -1,7 +1,5 @@
 [tools]
-# 2026年現在、拡張機能開発で安定して動くLTS（長期サポート）のNode.js
 node = "22"
-# パッケージ管理ツール（お好みに合わせてpnpmやyarnに変えてもOKです）
 npm = "latest"
 
 [tasks.build]
