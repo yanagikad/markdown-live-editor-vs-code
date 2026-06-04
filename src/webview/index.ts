@@ -21,7 +21,8 @@ let editor: Editor | null = null;
 const md = new MarkdownIt({ html: true });
 const turndown = new TurndownService({
     headingStyle: 'atx',
-    codeBlockStyle: 'fenced'
+    codeBlockStyle: 'fenced',
+    bulletMarker: '-'
 });
 turndown.use(gfm); // GitHub Flavored Markdown (テーブル等) を有効化
 
