@@ -32,20 +32,30 @@ __export(extension_exports, {
   activate: () => activate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode = __toESM(require("vscode"));
+var vscode2 = __toESM(require("vscode"));
 
 // src/messageHandler.ts
+var vscode = __toESM(require("vscode"));
 var ExtensionMessageHandler = class {
   constructor(document) {
     this.document = document;
   }
-  handle(message) {
+  async handle(message) {
     switch (message.type) {
       case "READY":
         console.log("Webview is ready");
         break;
       case "DOCUMENT_CHANGED":
-        console.log("Document changed:", message.text);
+        if (this.document.getText() === message.text) {
+          return;
+        }
+        const edit = new vscode.WorkspaceEdit();
+        const fullRange = new vscode.Range(
+          new vscode.Position(0, 0),
+          new vscode.Position(this.document.lineCount, 0)
+        );
+        edit.replace(this.document.uri, fullRange, message.text);
+        await vscode.workspace.applyEdit(edit);
         break;
     }
   }
@@ -65,7 +75,7 @@ var MarkdownLivePreviewProvider = class _MarkdownLivePreviewProvider {
   // エディターを登録するためのファクトリメソッド
   static register(context) {
     const provider = new _MarkdownLivePreviewProvider(context);
-    return vscode.window.registerCustomEditorProvider(_MarkdownLivePreviewProvider.viewType, provider);
+    return vscode2.window.registerCustomEditorProvider(_MarkdownLivePreviewProvider.viewType, provider);
   }
   // .md ファイルが開かれたときに呼ばれるコア処理
   async resolveCustomTextEditor(document, webviewPanel, _token) {
@@ -84,7 +94,7 @@ var MarkdownLivePreviewProvider = class _MarkdownLivePreviewProvider {
       }
       handler.handle(message);
     });
-    const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
+    const changeDocumentSubscription = vscode2.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
         const msg = {
           type: "UPDATE_DOCUMENT",
@@ -100,10 +110,10 @@ var MarkdownLivePreviewProvider = class _MarkdownLivePreviewProvider {
   // Webviewに表示するベースHTMLを生成
   getHtmlForWebview(webview) {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "js", "webview.js")
+      vscode2.Uri.joinPath(this.context.extensionUri, "media", "js", "webview.js")
     );
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "css", "style.css")
+      vscode2.Uri.joinPath(this.context.extensionUri, "media", "css", "style.css")
     );
     return `
             <!DOCTYPE html>
