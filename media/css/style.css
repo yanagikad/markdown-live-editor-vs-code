@@ -65,3 +65,52 @@ body {
     z-index: 20;
     pointer-events: none;
 }
+
+/* --- コードブロック（複数行）のスタイル --- */
+.ProseMirror pre {
+    background: var(--vscode-textBlockCodeBackground, #2d3139);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    color: var(--vscode-editor-foreground);
+    font-family: var(--vscode-editor-font-family, monospace);
+    margin: 1rem 0;
+    /* ★これがないと、改行が無視されて1行になります */
+    white-space: pre-wrap; 
+    word-break: break-all;
+}
+
+.ProseMirror pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: inherit;
+    color: inherit;
+}
+
+/* --- インラインコード（1行）のスタイル --- */
+.ProseMirror :not(pre) > code {
+    background: var(--vscode-textBlockCodeBackground, rgba(100, 100, 100, 0.2));
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: var(--vscode-editor-font-family, monospace);
+    color: var(--vscode-textLink-activeForeground, #e06c75);
+}
+
+.mermaid-preview {
+    background: #ffffff; /* 図が綺麗に見えるように白背景ベース */
+    padding: 1.5rem;
+    border-radius: 6px;
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+    border: 1px solid var(--vscode-panel-border);
+}
+
+/* Mermaidがエラー中の時の緩い警告表示 */
+.mermaid-error {
+    color: var(--vscode-errorForeground, #f44747);
+    font-size: 0.9em;
+    font-family: monospace;
+}

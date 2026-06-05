@@ -1,84 +1,205 @@
 import { Editor } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
+import { StarterKit } from '@tiptap/starter-kit';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { ListItem } from '@tiptap/extension-list-item';
+import { CodeBlock } from '@tiptap/extension-code-block';
+import { TaskList } from '@tiptap/extension-task-list';
+import { TaskItem } from '@tiptap/extension-task-item';
 
 import MarkdownIt from 'markdown-it';
-// @ts-ignore (turndownの型定義が見つからないエラーを回避)
+// @ts-ignore
+import taskLists from 'markdown-it-task-lists'; 
+// @ts-ignore
 import TurndownService from 'turndown';
-// @ts-ignore (型定義がないための回避)
+// @ts-ignore
 import { gfm } from 'turndown-plugin-gfm';
 
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../types/message';
 
+declare const mermaid: any;
+
 // @ts-ignore
 const vscode = acquireVsCodeApi();
 let editor: Editor | null = null;
+let lastSentMarkdown = '';
+let isUpdating = false;
 
-// パーサーの初期化
+function isSameMarkdown(a: string, b: string) {
+    if (!a || !b) return a === b;
+    return a.replace(/\r\n/g, '\n').trim() === b.replace(/\r\n/g, '\n').trim();
+}
+
 const md = new MarkdownIt({ html: true });
+md.use(taskLists, { label: true, labelAfter: true });
+
 const turndown = new TurndownService({
     headingStyle: 'atx',
     codeBlockStyle: 'fenced',
-    bulletMarker: '-'
+    bulletListMarker: '-'
 });
-turndown.use(gfm); // GitHub Flavored Markdown (テーブル等) を有効化
+turndown.use(gfm);
 
-// 1. TipTapエディターの初期化
+turndown.addRule('tiptap-task-list', {
+    filter: function(node: any) {
+        return node.nodeName === 'LI' && (node.getAttribute('data-type') === 'taskItem' || node.classList.contains('task-list-item'));
+    },
+    replacement: function(content: string, node: any) {
+        const isChecked = node.getAttribute('data-checked') === 'true' || node.querySelector('input[checked]');
+        const cleanContent = content.replace(/^\s*\[[ xX]\]\s*/, '').replace(/^\s+/, '').replace(/\n+$/, '');
+        return (isChecked ? '- [x] ' : '- [ ] ') + cleanContent + '\n';
+    }
+});
+
+// Mermaid 初期化
+mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral'
+});
+// Mermaid 初期化
+mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral'
+});
+
+const CustomListItem = ListItem.extend({
+    addKeyboardShortcuts() {
+        return {
+            Backspace: () => {
+                const { selection } = this.editor.state;
+                const { $from } = selection;
+                if (selection.empty && $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0) {
+                    return this.editor.commands.liftListItem('listItem');
+                }
+                return false;
+            },
+        };
+    },
+});
+
+const CustomCodeBlock = CodeBlock.extend({
+    addNodeView() {
+        return ({ node, getPos, editor }) => {
+            const dom = document.createElement('div');
+            dom.className = 'code-block-wrapper';
+
+            const pre = document.createElement('pre');
+            const contentDOM = document.createElement('code');
+            if (node.attrs.language) {
+                contentDOM.classList.add(`language-${node.attrs.language}`);
+            }
+            pre.appendChild(contentDOM);
+            dom.appendChild(pre);
+
+            let previewDOM: HTMLDivElement | null = null;
+            if (node.attrs.language === 'mermaid') {
+                previewDOM = document.createElement('div');
+                previewDOM.className = 'mermaid-preview';
+                previewDOM.contentEditable = 'false'; 
+                dom.appendChild(previewDOM);
+
+                setTimeout(() => {
+                    renderMermaid(node.textContent, previewDOM!);
+                }, 50);
+            }
+
+            let timer: any;
+            return {
+                dom,
+                contentDOM, 
+                update: (updatedNode) => {
+                    if (updatedNode.type !== node.type) return false;
+                    if (updatedNode.attrs.language === 'mermaid' && previewDOM) {
+                        clearTimeout(timer);
+                        timer = setTimeout(() => {
+                            renderMermaid(updatedNode.textContent, previewDOM!);
+                        }, 300);
+                    }
+                    return true;
+                }
+            };
+        };
+    }
+});
+
+// 非同期レンダリング
+async function renderMermaid(text: string, element: HTMLDivElement) {
+    if (!text.trim()) {
+        element.innerHTML = '';
+        return;
+    }
+    const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+    try {
+        const { svg } = await mermaid.render(id, text);
+        element.innerHTML = svg;
+    } catch (e: any) {
+        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: ${e.message || 'Syntax Error'}</div>`;
+    }
+}
+
 function initEditor(initialMarkdown: string) {
-    // Markdown を HTML に変換して TipTap に渡す
-    const initialHtml = md.render(initialMarkdown);
+    lastSentMarkdown = initialMarkdown;
+    const preprocessedMarkdown = initialMarkdown.replace(/^- \[ \]/gm, '* [ ]').replace(/^- \[x\]/gmi, '* [x]');
+    const initialHtml = md.render(preprocessedMarkdown);
 
     editor = new Editor({
         element: document.getElementById('app')!,
         extensions: [
-            StarterKit,
+            StarterKit.configure({ 
+                listItem: false,
+                codeBlock: false 
+            }), 
+            CustomListItem,
+            CustomCodeBlock, 
             Table.configure({ resizable: true }),
             TableRow,
             TableCell,
             TableHeader,
+            TaskList,
+            TaskItem.configure({ nested: true })
         ],
         content: initialHtml,
         onUpdate: ({ editor }) => {
-            // エディタのHTMLを取得し、GitHub形式のMarkdownに逆変換
+            if (isUpdating) return;
+
             const html = editor.getHTML();
-            const markdown = turndown.turndown(html);
+            let markdown = turndown.turndown(html);
+            markdown = markdown.replace(/^(\s*)\*\s/gm, '$1- ');
+
+            if (isSameMarkdown(markdown, lastSentMarkdown)) return;
             
-            const message: WebviewToExtensionMessage = {
+            lastSentMarkdown = markdown;
+            vscode.postMessage({
                 type: 'DOCUMENT_CHANGED',
                 text: markdown
-            };
-            vscode.postMessage(message);
+            });
         },
     });
 }
 
-// 2. Extensionからのメッセージ受信
 window.addEventListener('message', (event) => {
     const message: ExtensionToWebviewMessage = event.data;
-
     switch (message.type) {
         case 'INIT_DOCUMENT':
-            if (!editor) {
-                initEditor(message.text);
-            }
+            if (!editor) initEditor(message.text);
             break;
         case 'UPDATE_DOCUMENT':
             if (editor) {
-                // 外部（VS Code側）での変更をHTMLに変換してTipTapに反映
-                const incomingHtml = md.render(message.text);
-                const currentHtml = editor.getHTML();
-                
-                if (incomingHtml !== currentHtml) {
-                    editor.commands.setContent(incomingHtml, false);
+                if (isSameMarkdown(message.text, lastSentMarkdown)) {
+                    lastSentMarkdown = message.text;
+                    break;
                 }
+                isUpdating = true;
+                const preprocessedMarkdown = message.text.replace(/^- \[ \]/gm, '* [ ]').replace(/^- \[x\]/gmi, '* [x]');
+                const incomingHtml = md.render(preprocessedMarkdown);
+                editor.commands.setContent(incomingHtml, { emitUpdate: false });
+                lastSentMarkdown = message.text;
+                setTimeout(() => { isUpdating = false; }, 50);
             }
             break;
     }
 });
 
-// 3. 起動完了を通知
-const readyMessage: WebviewToExtensionMessage = { type: 'READY' };
-vscode.postMessage(readyMessage);
+vscode.postMessage({ type: 'READY' });
