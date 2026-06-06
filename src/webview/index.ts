@@ -114,37 +114,38 @@ function renderMermaid(text: string, element: HTMLDivElement) {
     
     const id = `mermaid_${Math.floor(Math.random() * 1000000)}`;
     
+    // TipTapの管轄外である <body> の直下に、一時的な「隠し部屋」を作る
+    const sandbox = document.createElement('div');
+    sandbox.style.position = 'absolute';
+    sandbox.style.visibility = 'hidden';
+    sandbox.style.top = '-9999px';
+    document.body.appendChild(sandbox);
+
+    vscode.postMessage({ type: 'LOG', level: 'info', message: `Attempting to render ID: ${id}` });
+
     try {
-        console.log(`[Mermaid] Attempting to render ID: ${id}`);
-        console.log(`[Mermaid] Raw Text:`, text);
-
-        // mermaid本体が読み込めていない（CDNブロック等）場合の検知
-        if (typeof mermaid === 'undefined') {
-            throw new Error("Global 'mermaid' object is undefined. Script failed to load.");
-        }
-
+        // 白い箱（element）ではなく、安全な隠し部屋（sandbox）を計算用キャンバスとして渡す
         mermaid.render(id, text, (svgCode: string) => {
-            console.log(`[Mermaid] Success for ID: ${id}`);
+            // 完成した SVG（ただの文字列）だけを白い箱に流し込む
             element.innerHTML = svgCode;
-        }, element);
-
+            
+            // 役目を終えた隠し部屋を消去
+            sandbox.remove();
+            vscode.postMessage({ type: 'LOG', level: 'info', message: `Render success for ID: ${id}` });
+        }, sandbox);
     } catch (e: any) {
-        console.error(`[Mermaid] Render Error:`, e);
-
-        // 生のエラー情報（Message, StackTrace）をプレビュー画面に直接書き出す
+        // 失敗した場合、VS Code側にエラーの詳細を送信する
         const errorMsg = e?.message || e?.toString() || 'Unknown Error';
-        const errorStack = e?.stack || 'No Stack Trace';
-        
-        element.innerHTML = `
-            <div style="background-color: #2b0000; border: 1px solid red; color: #ffcccc; padding: 10px; font-family: monospace; font-size: 13px; white-space: pre-wrap; overflow-x: auto;">
-                <strong>🚨 Mermaid Render Exception</strong><br>
-                <hr style="border-color: red;">
-                <strong>Message:</strong><br>${errorMsg}<br>
-                <hr style="border-color: red;">
-                <strong>Stack:</strong><br>${errorStack}
-            </div>
-        `;
+        vscode.postMessage({ 
+            type: 'LOG', 
+            level: 'error', 
+            message: errorMsg,
+            details: e?.stack || 'No Stack Trace'
+        });
 
+        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error (See VS Code Notification)</div>`;
+        
+        sandbox.remove();
         const badElement = document.getElementById(id);
         if (badElement) badElement.remove();
     }

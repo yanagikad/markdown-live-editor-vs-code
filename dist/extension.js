@@ -103,8 +103,22 @@ var MarkdownLivePreviewProvider = class _MarkdownLivePreviewProvider {
         webviewPanel.webview.postMessage(msg);
       }
     });
-    webviewPanel.onDidDispose(() => {
-      changeDocumentSubscription.dispose();
+    webviewPanel.webview.onDidReceiveMessage((message) => {
+      if (message.type === "READY") {
+        webviewPanel.webview.postMessage({
+          type: "INIT_DOCUMENT",
+          text: document.getText()
+        });
+      } else if (message.type === "LOG") {
+        if (message.level === "error") {
+          console.error("[Webview Error]", message.message, message.details);
+          vscode2.window.showErrorMessage(`Mermaid Error: ${message.message}`);
+        } else {
+          console.log("[Webview Info]", message.message);
+        }
+      } else {
+        handler.handle(message);
+      }
     });
   }
   // Webviewに表示するベースHTMLを生成

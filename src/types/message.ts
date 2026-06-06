@@ -4,4 +4,6 @@ export type ExtensionToWebviewMessage =
 
 export type WebviewToExtensionMessage = 
   | { type: 'DOCUMENT_CHANGED'; text: string }
-  | { type: 'READY' };
+  | { type: 'READY' }
+  // ★ これを追加
+  | { type: 'LOG'; level: 'info' | 'error'; message: string; details?: any };

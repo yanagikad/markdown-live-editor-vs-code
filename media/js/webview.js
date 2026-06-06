@@ -1,134 +1,9 @@
 (() => {
-  var __create = Object.create;
   var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __getProtoOf = Object.getPrototypeOf;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __commonJS = (cb, mod) => function __require() {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-  };
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
   };
-  var __copyProps = (to, from2, except, desc) => {
-    if (from2 && typeof from2 === "object" || typeof from2 === "function") {
-      for (let key of __getOwnPropNames(from2))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from2[key], enumerable: !(desc = __getOwnPropDesc(from2, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-    // If the importer is in node compatibility mode or this is not an ESM
-    // file that has been converted to a CommonJS file using a Babel-
-    // compatible transform (i.e. "__esModule" has not been set), then set
-    // "default" to the CommonJS "module.exports" for node compatibility.
-    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-    mod
-  ));
-
-  // node_modules/markdown-it-task-lists/index.js
-  var require_markdown_it_task_lists = __commonJS({
-    "node_modules/markdown-it-task-lists/index.js"(exports, module) {
-      var disableCheckboxes = true;
-      var useLabelWrapper = false;
-      var useLabelAfter = false;
-      module.exports = function(md2, options) {
-        if (options) {
-          disableCheckboxes = !options.enabled;
-          useLabelWrapper = !!options.label;
-          useLabelAfter = !!options.labelAfter;
-        }
-        md2.core.ruler.after("inline", "github-task-lists", function(state) {
-          var tokens = state.tokens;
-          for (var i = 2; i < tokens.length; i++) {
-            if (isTodoItem(tokens, i)) {
-              todoify(tokens[i], state.Token);
-              attrSet2(tokens[i - 2], "class", "task-list-item" + (!disableCheckboxes ? " enabled" : ""));
-              attrSet2(tokens[parentToken(tokens, i - 2)], "class", "contains-task-list");
-            }
-          }
-        });
-      };
-      function attrSet2(token, name, value) {
-        var index = token.attrIndex(name);
-        var attr = [name, value];
-        if (index < 0) {
-          token.attrPush(attr);
-        } else {
-          token.attrs[index] = attr;
-        }
-      }
-      function parentToken(tokens, index) {
-        var targetLevel = tokens[index].level - 1;
-        for (var i = index - 1; i >= 0; i--) {
-          if (tokens[i].level === targetLevel) {
-            return i;
-          }
-        }
-        return -1;
-      }
-      function isTodoItem(tokens, index) {
-        return isInline2(tokens[index]) && isParagraph(tokens[index - 1]) && isListItem(tokens[index - 2]) && startsWithTodoMarkdown(tokens[index]);
-      }
-      function todoify(token, TokenConstructor) {
-        token.children.unshift(makeCheckbox(token, TokenConstructor));
-        token.children[1].content = token.children[1].content.slice(3);
-        token.content = token.content.slice(3);
-        if (useLabelWrapper) {
-          if (useLabelAfter) {
-            token.children.pop();
-            var id = "task-item-" + Math.ceil(Math.random() * (1e4 * 1e3) - 1e3);
-            token.children[0].content = token.children[0].content.slice(0, -1) + ' id="' + id + '">';
-            token.children.push(afterLabel(token.content, id, TokenConstructor));
-          } else {
-            token.children.unshift(beginLabel(TokenConstructor));
-            token.children.push(endLabel(TokenConstructor));
-          }
-        }
-      }
-      function makeCheckbox(token, TokenConstructor) {
-        var checkbox = new TokenConstructor("html_inline", "", 0);
-        var disabledAttr = disableCheckboxes ? ' disabled="" ' : "";
-        if (token.content.indexOf("[ ] ") === 0) {
-          checkbox.content = '<input class="task-list-item-checkbox"' + disabledAttr + 'type="checkbox">';
-        } else if (token.content.indexOf("[x] ") === 0 || token.content.indexOf("[X] ") === 0) {
-          checkbox.content = '<input class="task-list-item-checkbox" checked=""' + disabledAttr + 'type="checkbox">';
-        }
-        return checkbox;
-      }
-      function beginLabel(TokenConstructor) {
-        var token = new TokenConstructor("html_inline", "", 0);
-        token.content = "<label>";
-        return token;
-      }
-      function endLabel(TokenConstructor) {
-        var token = new TokenConstructor("html_inline", "", 0);
-        token.content = "</label>";
-        return token;
-      }
-      function afterLabel(content, id, TokenConstructor) {
-        var token = new TokenConstructor("html_inline", "", 0);
-        token.content = '<label class="task-list-item-label" for="' + id + '">' + content + "</label>";
-        token.attrs = [{ for: id }];
-        return token;
-      }
-      function isInline2(token) {
-        return token.type === "inline";
-      }
-      function isParagraph(token) {
-        return token.type === "paragraph_open";
-      }
-      function isListItem(token) {
-        return token.type === "list_item_open";
-      }
-      function startsWithTodoMarkdown(token) {
-        return token.content.indexOf("[ ] ") === 0 || token.content.indexOf("[x] ") === 0 || token.content.indexOf("[X] ") === 0;
-      }
-    }
-  });
 
   // node_modules/orderedmap/dist/index.js
   function OrderedMap(content) {
@@ -2570,7 +2445,7 @@
   function isStyleRule(rule) {
     return rule.style != null;
   }
-  var DOMParser2 = class _DOMParser {
+  var DOMParser = class _DOMParser {
     /**
     Create a parser that targets the given schema, using the given
     parsing rules.
@@ -9453,7 +9328,7 @@
         dom = child;
       }
     if (!slice2) {
-      let parser = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
+      let parser = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
       slice2 = parser.parseSlice(dom, {
         preserveWhitespace: !!(asText || sliceData),
         context: $context,
@@ -11327,7 +11202,7 @@
       }
     }
     let startDoc = view.state.doc;
-    let parser = view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
+    let parser = view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
     let $from = startDoc.resolve(from2);
     let sel = null, doc3 = parser.parse(parent, {
       topNode: $from.parent,
@@ -12942,12 +12817,12 @@
           })
         });
         if (options.slice) {
-          DOMParser2.fromSchema(contentCheckSchema).parseSlice(
+          DOMParser.fromSchema(contentCheckSchema).parseSlice(
             elementFromString(content),
             options.parseOptions
           );
         } else {
-          DOMParser2.fromSchema(contentCheckSchema).parse(
+          DOMParser.fromSchema(contentCheckSchema).parse(
             elementFromString(content),
             options.parseOptions
           );
@@ -12958,7 +12833,7 @@
           });
         }
       }
-      const parser = DOMParser2.fromSchema(schema);
+      const parser = DOMParser.fromSchema(schema);
       if (options.slice) {
         return parser.parseSlice(elementFromString(content), options.parseOptions).content;
       }
@@ -34276,9 +34151,6 @@ ${prefix}
   };
   var lib_default = MarkdownIt;
 
-  // src/webview/index.ts
-  var import_markdown_it_task_lists = __toESM(require_markdown_it_task_lists());
-
   // node_modules/turndown/lib/turndown.browser.es.js
   function extend(destination) {
     for (var i = 1; i < arguments.length; i++) {
@@ -35057,48 +34929,18 @@ ${prefix}
     return a.replace(/\r\n/g, "\n").trim() === b.replace(/\r\n/g, "\n").trim();
   }
   var md = new lib_default({ html: true });
-  md.use(import_markdown_it_task_lists.default, { label: false, labelAfter: false });
-  function processHtmlForTipTap(html) {
-    const parser = new DOMParser();
-    const doc3 = parser.parseFromString(html, "text/html");
-    doc3.querySelectorAll("li.task-list-item").forEach((li) => {
-      const input = li.querySelector('input[type="checkbox"]');
-      if (input) {
-        li.setAttribute("data-type", "taskItem");
-        li.setAttribute("data-checked", input.hasAttribute("checked") ? "true" : "false");
-        input.remove();
-        const p = document.createElement("p");
-        while (li.firstChild) {
-          p.appendChild(li.firstChild);
-        }
-        li.appendChild(p);
-        if (li.parentElement && li.parentElement.tagName === "UL") {
-          li.parentElement.setAttribute("data-type", "taskList");
-        }
-      }
-    });
-    return doc3.body.innerHTML;
-  }
   var turndown = new TurndownService({
     headingStyle: "atx",
     codeBlockStyle: "fenced",
     bulletListMarker: "-"
   });
   turndown.use(gfm);
-  turndown.addRule("tiptap-task-list", {
-    filter: function(node) {
-      return node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem";
-    },
-    replacement: function(content, node) {
-      const isChecked = node.getAttribute("data-checked") === "true";
-      const cleanContent = content.replace(/^\s*\[[ xX]\]\s*/, "").replace(/^\s+/, "").replace(/\n+$/, "");
-      return (isChecked ? "- [x] " : "- [ ] ") + cleanContent + "\n";
-    }
-  });
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "neutral"
-  });
+  try {
+    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    console.log("[Mermaid] Initialization completed.");
+  } catch (e) {
+    console.error("[Mermaid] Initialization failed:", e);
+  }
   var CustomListItem = ListItem.extend({
     addKeyboardShortcuts() {
       return {
@@ -35159,20 +35001,35 @@ ${prefix}
       return;
     }
     const id = `mermaid_${Math.floor(Math.random() * 1e6)}`;
+    const sandbox = document.createElement("div");
+    sandbox.style.position = "absolute";
+    sandbox.style.visibility = "hidden";
+    sandbox.style.top = "-9999px";
+    document.body.appendChild(sandbox);
+    vscode.postMessage({ type: "LOG", level: "info", message: `Attempting to render ID: ${id}` });
     try {
       mermaid.render(id, text2, (svgCode) => {
         element.innerHTML = svgCode;
-      }, element);
+        sandbox.remove();
+        vscode.postMessage({ type: "LOG", level: "info", message: `Render success for ID: ${id}` });
+      }, sandbox);
     } catch (e) {
-      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error: ${e.message || "Syntax Error"}</div>`;
+      const errorMsg = e?.message || e?.toString() || "Unknown Error";
+      vscode.postMessage({
+        type: "LOG",
+        level: "error",
+        message: errorMsg,
+        details: e?.stack || "No Stack Trace"
+      });
+      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error (See VS Code Notification)</div>`;
+      sandbox.remove();
       const badElement = document.getElementById(id);
       if (badElement) badElement.remove();
     }
   }
   function initEditor(initialMarkdown) {
     lastSentMarkdown = initialMarkdown;
-    const rawHtml = md.render(initialMarkdown);
-    const initialHtml = processHtmlForTipTap(rawHtml);
+    const initialHtml = md.render(initialMarkdown);
     editor = new Editor({
       element: document.getElementById("app"),
       extensions: [
@@ -35185,9 +35042,7 @@ ${prefix}
         Table.configure({ resizable: true }),
         TableRow,
         TableCell,
-        TableHeader,
-        TaskList,
-        TaskItem.configure({ nested: true })
+        TableHeader
       ],
       content: initialHtml,
       onUpdate: ({ editor: editor2 }) => {
@@ -35217,8 +35072,7 @@ ${prefix}
             break;
           }
           isUpdating = true;
-          const rawHtml = md.render(message.text);
-          const incomingHtml = processHtmlForTipTap(rawHtml);
+          const incomingHtml = md.render(message.text);
           editor.commands.setContent(incomingHtml, { emitUpdate: false });
           lastSentMarkdown = message.text;
           setTimeout(() => {

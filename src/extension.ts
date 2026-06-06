@@ -63,8 +63,23 @@ class MarkdownLivePreviewProvider implements vscode.CustomTextEditorProvider {
         });
 
         // タブが閉じられたらイベントリスナーを解放
-        webviewPanel.onDidDispose(() => {
-            changeDocumentSubscription.dispose();
+        webviewPanel.webview.onDidReceiveMessage((message: any) => { // 型エラー回避のため any に
+            if (message.type === 'READY') {
+                webviewPanel.webview.postMessage({
+                    type: 'INIT_DOCUMENT',
+                    text: document.getText()
+                });
+            } else if (message.type === 'LOG') {
+                // ★ Webviewからのログを受信して出力
+                if (message.level === 'error') {
+                    console.error('[Webview Error]', message.message, message.details);
+                    vscode.window.showErrorMessage(`Mermaid Error: ${message.message}`);
+                } else {
+                    console.log('[Webview Info]', message.message);
+                }
+            } else {
+                handler.handle(message);
+            }
         });
     }
 
