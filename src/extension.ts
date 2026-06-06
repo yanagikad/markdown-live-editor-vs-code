@@ -68,7 +68,7 @@ class MarkdownLivePreviewProvider implements vscode.CustomTextEditorProvider {
         });
     }
 
-    // Webviewに表示するベースHTMLを生成
+// Webviewに表示するベースHTMLを生成
     private getHtmlForWebview(webview: vscode.Webview): string {
         // ビルドされたJSファイルへのパスをVS Code用に変換
         const scriptUri = webview.asWebviewUri(
@@ -83,7 +83,7 @@ class MarkdownLivePreviewProvider implements vscode.CustomTextEditorProvider {
             <html lang="ja">
             <head>
                 <meta charset="UTF-8">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src vscode-webview-resource: https: data:; script-src 'unsafe-inline' 'unsafe-eval' https:; style-src 'unsafe-inline' https:; worker-src blob:;">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src webview-resource: vscode-webview-resource: https: data:; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; worker-src blob:;">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link rel="stylesheet" href="${styleUri}">
                 <title>Markdown Live Preview</title>
@@ -91,7 +91,7 @@ class MarkdownLivePreviewProvider implements vscode.CustomTextEditorProvider {
             <body>
                 <div id="app"></div>
                 
-                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid@9.4.3/dist/mermaid.min.js"></script>
                 
                 <script src="${scriptUri}"></script>
             </body>

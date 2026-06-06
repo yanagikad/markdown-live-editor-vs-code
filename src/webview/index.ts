@@ -53,12 +53,7 @@ turndown.addRule('tiptap-task-list', {
     }
 });
 
-// Mermaid 初期化
-mermaid.initialize({
-    startOnLoad: false,
-    theme: 'neutral'
-});
-// Mermaid 初期化
+// Mermaid 初期化（重複を解消）
 mermaid.initialize({
     startOnLoad: false,
     theme: 'neutral'
@@ -124,18 +119,25 @@ const CustomCodeBlock = CodeBlock.extend({
     }
 });
 
-// 非同期レンダリング
-async function renderMermaid(text: string, element: HTMLDivElement) {
+function renderMermaid(text: string, element: HTMLDivElement) {
     if (!text.trim()) {
         element.innerHTML = '';
         return;
     }
-    const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // IDはハイフンを含めない、必ずアルファベット始まりのユニーク値にします
+    const id = `mermaid${Math.floor(Math.random() * 1000000)}`;
+    
     try {
-        const { svg } = await mermaid.render(id, text);
-        element.innerHTML = svg;
+        // v9のレンダリングAPI
+        mermaid.render(id, text, (svgCode: string) => {
+            element.innerHTML = svgCode;
+        });
     } catch (e: any) {
-        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: ${e.message || 'Syntax Error'}</div>`;
+        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: Syntax Error</div>`;
+        
+        const badElement = document.getElementById(id);
+        if (badElement) badElement.remove();
     }
 }
 
@@ -161,7 +163,7 @@ function initEditor(initialMarkdown: string) {
             TaskItem.configure({ nested: true })
         ],
         content: initialHtml,
-        onUpdate: ({ editor }) => {
+        onUpdate: ({ editor }: { editor: any }) => {
             if (isUpdating) return;
 
             const html = editor.getHTML();

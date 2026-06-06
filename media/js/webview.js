@@ -35078,10 +35078,6 @@ ${prefix}
     startOnLoad: false,
     theme: "neutral"
   });
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "neutral"
-  });
   var CustomListItem = ListItem.extend({
     addKeyboardShortcuts() {
       return {
@@ -35136,17 +35132,20 @@ ${prefix}
       };
     }
   });
-  async function renderMermaid(text2, element) {
+  function renderMermaid(text2, element) {
     if (!text2.trim()) {
       element.innerHTML = "";
       return;
     }
-    const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+    const id = `mermaid${Math.floor(Math.random() * 1e6)}`;
     try {
-      const { svg } = await mermaid.render(id, text2);
-      element.innerHTML = svg;
+      mermaid.render(id, text2, (svgCode) => {
+        element.innerHTML = svgCode;
+      });
     } catch (e) {
-      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error: ${e.message || "Syntax Error"}</div>`;
+      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error: Syntax Error</div>`;
+      const badElement = document.getElementById(id);
+      if (badElement) badElement.remove();
     }
   }
   function initEditor(initialMarkdown) {

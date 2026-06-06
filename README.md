@@ -25,6 +25,8 @@ Extension（Node.js）とWebview（ブラウザ）間で発生する双方向通
     
 -   **表（Table）のWYSIWYGによる直感的な編集**（行・列の追加削除、セル内編集）
     
+-   \[ \]
+    
 
 ```mermaid
 graph TD
