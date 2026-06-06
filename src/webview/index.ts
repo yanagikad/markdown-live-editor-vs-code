@@ -33,7 +33,34 @@ function isSameMarkdown(a: string, b: string) {
 }
 
 const md = new MarkdownIt({ html: true });
-md.use(taskLists, { label: true, labelAfter: true });
+md.use(taskLists, { label: false, labelAfter: false });
+
+// ★ 追加：markdown-itのHTMLをTipTapがチェックボックスとして認識できるように整形する関数
+function processHtmlForTipTap(html: string) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    doc.querySelectorAll('li.task-list-item').forEach(li => {
+        const input = li.querySelector('input[type="checkbox"]') as HTMLInputElement;
+        if (input) {
+            li.setAttribute('data-type', 'taskItem');
+            li.setAttribute('data-checked', input.hasAttribute('checked') ? 'true' : 'false');
+            input.remove(); // 既存のinputは消す
+            
+            const p = document.createElement('p');
+            while (li.firstChild) {
+                p.appendChild(li.firstChild);
+            }
+            li.appendChild(p);
+
+            if (li.parentElement && li.parentElement.tagName === 'UL') {
+                li.parentElement.setAttribute('data-type', 'taskList');
+            }
+        }
+    });
+    
+    return doc.body.innerHTML;
+}
 
 const turndown = new TurndownService({
     headingStyle: 'atx',
@@ -44,16 +71,15 @@ turndown.use(gfm);
 
 turndown.addRule('tiptap-task-list', {
     filter: function(node: any) {
-        return node.nodeName === 'LI' && (node.getAttribute('data-type') === 'taskItem' || node.classList.contains('task-list-item'));
+        return node.nodeName === 'LI' && node.getAttribute('data-type') === 'taskItem';
     },
     replacement: function(content: string, node: any) {
-        const isChecked = node.getAttribute('data-checked') === 'true' || node.querySelector('input[checked]');
+        const isChecked = node.getAttribute('data-checked') === 'true';
         const cleanContent = content.replace(/^\s*\[[ xX]\]\s*/, '').replace(/^\s+/, '').replace(/\n+$/, '');
         return (isChecked ? '- [x] ' : '- [ ] ') + cleanContent + '\n';
     }
 });
 
-// Mermaid 初期化（重複を解消）
 mermaid.initialize({
     startOnLoad: false,
     theme: 'neutral'
@@ -125,17 +151,15 @@ function renderMermaid(text: string, element: HTMLDivElement) {
         return;
     }
     
-    // IDはハイフンを含めない、必ずアルファベット始まりのユニーク値にします
-    const id = `mermaid${Math.floor(Math.random() * 1000000)}`;
+    const id = `mermaid_${Math.floor(Math.random() * 1000000)}`;
     
     try {
-        // v9のレンダリングAPI
+        // ★ 修正：第4引数に element を渡すことで、VS Code環境でのエラー落ちを回避
         mermaid.render(id, text, (svgCode: string) => {
             element.innerHTML = svgCode;
-        });
+        }, element);
     } catch (e: any) {
-        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: Syntax Error</div>`;
-        
+        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: ${e.message || 'Syntax Error'}</div>`;
         const badElement = document.getElementById(id);
         if (badElement) badElement.remove();
     }
@@ -143,8 +167,9 @@ function renderMermaid(text: string, element: HTMLDivElement) {
 
 function initEditor(initialMarkdown: string) {
     lastSentMarkdown = initialMarkdown;
-    const preprocessedMarkdown = initialMarkdown.replace(/^- \[ \]/gm, '* [ ]').replace(/^- \[x\]/gmi, '* [x]');
-    const initialHtml = md.render(preprocessedMarkdown);
+    // ★ 修正：マークダウンをパースした後に、ブリッジ関数を通してTipTapに渡す
+    const rawHtml = md.render(initialMarkdown);
+    const initialHtml = processHtmlForTipTap(rawHtml);
 
     editor = new Editor({
         element: document.getElementById('app')!,
@@ -194,8 +219,9 @@ window.addEventListener('message', (event) => {
                     break;
                 }
                 isUpdating = true;
-                const preprocessedMarkdown = message.text.replace(/^- \[ \]/gm, '* [ ]').replace(/^- \[x\]/gmi, '* [x]');
-                const incomingHtml = md.render(preprocessedMarkdown);
+                // ★ 修正：更新時もブリッジ関数を通す
+                const rawHtml = md.render(message.text);
+                const incomingHtml = processHtmlForTipTap(rawHtml);
                 editor.commands.setContent(incomingHtml, { emitUpdate: false });
                 lastSentMarkdown = message.text;
                 setTimeout(() => { isUpdating = false; }, 50);
