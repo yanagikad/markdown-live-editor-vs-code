@@ -2570,7 +2570,7 @@
   function isStyleRule(rule) {
     return rule.style != null;
   }
-  var DOMParser = class _DOMParser {
+  var DOMParser2 = class _DOMParser {
     /**
     Create a parser that targets the given schema, using the given
     parsing rules.
@@ -9453,7 +9453,7 @@
         dom = child;
       }
     if (!slice2) {
-      let parser = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
+      let parser = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
       slice2 = parser.parseSlice(dom, {
         preserveWhitespace: !!(asText || sliceData),
         context: $context,
@@ -11327,7 +11327,7 @@
       }
     }
     let startDoc = view.state.doc;
-    let parser = view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
+    let parser = view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
     let $from = startDoc.resolve(from2);
     let sel = null, doc3 = parser.parse(parent, {
       topNode: $from.parent,
@@ -12942,12 +12942,12 @@
           })
         });
         if (options.slice) {
-          DOMParser.fromSchema(contentCheckSchema).parseSlice(
+          DOMParser2.fromSchema(contentCheckSchema).parseSlice(
             elementFromString(content),
             options.parseOptions
           );
         } else {
-          DOMParser.fromSchema(contentCheckSchema).parse(
+          DOMParser2.fromSchema(contentCheckSchema).parse(
             elementFromString(content),
             options.parseOptions
           );
@@ -12958,7 +12958,7 @@
           });
         }
       }
-      const parser = DOMParser.fromSchema(schema);
+      const parser = DOMParser2.fromSchema(schema);
       if (options.slice) {
         return parser.parseSlice(elementFromString(content), options.parseOptions).content;
       }
@@ -35057,7 +35057,28 @@ ${prefix}
     return a.replace(/\r\n/g, "\n").trim() === b.replace(/\r\n/g, "\n").trim();
   }
   var md = new lib_default({ html: true });
-  md.use(import_markdown_it_task_lists.default, { label: true, labelAfter: true });
+  md.use(import_markdown_it_task_lists.default, { label: false, labelAfter: false });
+  function processHtmlForTipTap(html) {
+    const parser = new DOMParser();
+    const doc3 = parser.parseFromString(html, "text/html");
+    doc3.querySelectorAll("li.task-list-item").forEach((li) => {
+      const input = li.querySelector('input[type="checkbox"]');
+      if (input) {
+        li.setAttribute("data-type", "taskItem");
+        li.setAttribute("data-checked", input.hasAttribute("checked") ? "true" : "false");
+        input.remove();
+        const p = document.createElement("p");
+        while (li.firstChild) {
+          p.appendChild(li.firstChild);
+        }
+        li.appendChild(p);
+        if (li.parentElement && li.parentElement.tagName === "UL") {
+          li.parentElement.setAttribute("data-type", "taskList");
+        }
+      }
+    });
+    return doc3.body.innerHTML;
+  }
   var turndown = new TurndownService({
     headingStyle: "atx",
     codeBlockStyle: "fenced",
@@ -35066,10 +35087,10 @@ ${prefix}
   turndown.use(gfm);
   turndown.addRule("tiptap-task-list", {
     filter: function(node) {
-      return node.nodeName === "LI" && (node.getAttribute("data-type") === "taskItem" || node.classList.contains("task-list-item"));
+      return node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem";
     },
     replacement: function(content, node) {
-      const isChecked = node.getAttribute("data-checked") === "true" || node.querySelector("input[checked]");
+      const isChecked = node.getAttribute("data-checked") === "true";
       const cleanContent = content.replace(/^\s*\[[ xX]\]\s*/, "").replace(/^\s+/, "").replace(/\n+$/, "");
       return (isChecked ? "- [x] " : "- [ ] ") + cleanContent + "\n";
     }
@@ -35137,21 +35158,21 @@ ${prefix}
       element.innerHTML = "";
       return;
     }
-    const id = `mermaid${Math.floor(Math.random() * 1e6)}`;
+    const id = `mermaid_${Math.floor(Math.random() * 1e6)}`;
     try {
       mermaid.render(id, text2, (svgCode) => {
         element.innerHTML = svgCode;
-      });
+      }, element);
     } catch (e) {
-      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error: Syntax Error</div>`;
+      element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">\u274C Mermaid Error: ${e.message || "Syntax Error"}</div>`;
       const badElement = document.getElementById(id);
       if (badElement) badElement.remove();
     }
   }
   function initEditor(initialMarkdown) {
     lastSentMarkdown = initialMarkdown;
-    const preprocessedMarkdown = initialMarkdown.replace(/^- \[ \]/gm, "* [ ]").replace(/^- \[x\]/gmi, "* [x]");
-    const initialHtml = md.render(preprocessedMarkdown);
+    const rawHtml = md.render(initialMarkdown);
+    const initialHtml = processHtmlForTipTap(rawHtml);
     editor = new Editor({
       element: document.getElementById("app"),
       extensions: [
@@ -35196,8 +35217,8 @@ ${prefix}
             break;
           }
           isUpdating = true;
-          const preprocessedMarkdown = message.text.replace(/^- \[ \]/gm, "* [ ]").replace(/^- \[x\]/gmi, "* [x]");
-          const incomingHtml = md.render(preprocessedMarkdown);
+          const rawHtml = md.render(message.text);
+          const incomingHtml = processHtmlForTipTap(rawHtml);
           editor.commands.setContent(incomingHtml, { emitUpdate: false });
           lastSentMarkdown = message.text;
           setTimeout(() => {
