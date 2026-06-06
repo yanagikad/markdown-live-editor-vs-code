@@ -6,12 +6,8 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { ListItem } from '@tiptap/extension-list-item';
 import { CodeBlock } from '@tiptap/extension-code-block';
-import { TaskList } from '@tiptap/extension-task-list';
-import { TaskItem } from '@tiptap/extension-task-item';
 
 import MarkdownIt from 'markdown-it';
-// @ts-ignore
-import taskLists from 'markdown-it-task-lists'; 
 // @ts-ignore
 import TurndownService from 'turndown';
 // @ts-ignore
@@ -33,34 +29,6 @@ function isSameMarkdown(a: string, b: string) {
 }
 
 const md = new MarkdownIt({ html: true });
-md.use(taskLists, { label: false, labelAfter: false });
-
-// ★ 追加：markdown-itのHTMLをTipTapがチェックボックスとして認識できるように整形する関数
-function processHtmlForTipTap(html: string) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    doc.querySelectorAll('li.task-list-item').forEach(li => {
-        const input = li.querySelector('input[type="checkbox"]') as HTMLInputElement;
-        if (input) {
-            li.setAttribute('data-type', 'taskItem');
-            li.setAttribute('data-checked', input.hasAttribute('checked') ? 'true' : 'false');
-            input.remove(); // 既存のinputは消す
-            
-            const p = document.createElement('p');
-            while (li.firstChild) {
-                p.appendChild(li.firstChild);
-            }
-            li.appendChild(p);
-
-            if (li.parentElement && li.parentElement.tagName === 'UL') {
-                li.parentElement.setAttribute('data-type', 'taskList');
-            }
-        }
-    });
-    
-    return doc.body.innerHTML;
-}
 
 const turndown = new TurndownService({
     headingStyle: 'atx',
@@ -69,21 +37,13 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
-turndown.addRule('tiptap-task-list', {
-    filter: function(node: any) {
-        return node.nodeName === 'LI' && node.getAttribute('data-type') === 'taskItem';
-    },
-    replacement: function(content: string, node: any) {
-        const isChecked = node.getAttribute('data-checked') === 'true';
-        const cleanContent = content.replace(/^\s*\[[ xX]\]\s*/, '').replace(/^\s+/, '').replace(/\n+$/, '');
-        return (isChecked ? '- [x] ' : '- [ ] ') + cleanContent + '\n';
-    }
-});
-
-mermaid.initialize({
-    startOnLoad: false,
-    theme: 'neutral'
-});
+// ★ 初期化のログも残す
+try {
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+    console.log("[Mermaid] Initialization completed.");
+} catch (e) {
+    console.error("[Mermaid] Initialization failed:", e);
+}
 
 const CustomListItem = ListItem.extend({
     addKeyboardShortcuts() {
@@ -145,6 +105,7 @@ const CustomCodeBlock = CodeBlock.extend({
     }
 });
 
+// ★ 原因究明のためのエラーダンプ特化レンダリング
 function renderMermaid(text: string, element: HTMLDivElement) {
     if (!text.trim()) {
         element.innerHTML = '';
@@ -154,12 +115,36 @@ function renderMermaid(text: string, element: HTMLDivElement) {
     const id = `mermaid_${Math.floor(Math.random() * 1000000)}`;
     
     try {
-        // ★ 修正：第4引数に element を渡すことで、VS Code環境でのエラー落ちを回避
+        console.log(`[Mermaid] Attempting to render ID: ${id}`);
+        console.log(`[Mermaid] Raw Text:`, text);
+
+        // mermaid本体が読み込めていない（CDNブロック等）場合の検知
+        if (typeof mermaid === 'undefined') {
+            throw new Error("Global 'mermaid' object is undefined. Script failed to load.");
+        }
+
         mermaid.render(id, text, (svgCode: string) => {
+            console.log(`[Mermaid] Success for ID: ${id}`);
             element.innerHTML = svgCode;
         }, element);
+
     } catch (e: any) {
-        element.innerHTML = `<div class="mermaid-error" style="color: var(--vscode-errorForeground, red); font-family: monospace;">❌ Mermaid Error: ${e.message || 'Syntax Error'}</div>`;
+        console.error(`[Mermaid] Render Error:`, e);
+
+        // 生のエラー情報（Message, StackTrace）をプレビュー画面に直接書き出す
+        const errorMsg = e?.message || e?.toString() || 'Unknown Error';
+        const errorStack = e?.stack || 'No Stack Trace';
+        
+        element.innerHTML = `
+            <div style="background-color: #2b0000; border: 1px solid red; color: #ffcccc; padding: 10px; font-family: monospace; font-size: 13px; white-space: pre-wrap; overflow-x: auto;">
+                <strong>🚨 Mermaid Render Exception</strong><br>
+                <hr style="border-color: red;">
+                <strong>Message:</strong><br>${errorMsg}<br>
+                <hr style="border-color: red;">
+                <strong>Stack:</strong><br>${errorStack}
+            </div>
+        `;
+
         const badElement = document.getElementById(id);
         if (badElement) badElement.remove();
     }
@@ -167,9 +152,7 @@ function renderMermaid(text: string, element: HTMLDivElement) {
 
 function initEditor(initialMarkdown: string) {
     lastSentMarkdown = initialMarkdown;
-    // ★ 修正：マークダウンをパースした後に、ブリッジ関数を通してTipTapに渡す
-    const rawHtml = md.render(initialMarkdown);
-    const initialHtml = processHtmlForTipTap(rawHtml);
+    const initialHtml = md.render(initialMarkdown);
 
     editor = new Editor({
         element: document.getElementById('app')!,
@@ -183,9 +166,7 @@ function initEditor(initialMarkdown: string) {
             Table.configure({ resizable: true }),
             TableRow,
             TableCell,
-            TableHeader,
-            TaskList,
-            TaskItem.configure({ nested: true })
+            TableHeader
         ],
         content: initialHtml,
         onUpdate: ({ editor }: { editor: any }) => {
@@ -219,9 +200,7 @@ window.addEventListener('message', (event) => {
                     break;
                 }
                 isUpdating = true;
-                // ★ 修正：更新時もブリッジ関数を通す
-                const rawHtml = md.render(message.text);
-                const incomingHtml = processHtmlForTipTap(rawHtml);
+                const incomingHtml = md.render(message.text);
                 editor.commands.setContent(incomingHtml, { emitUpdate: false });
                 lastSentMarkdown = message.text;
                 setTimeout(() => { isUpdating = false; }, 50);
